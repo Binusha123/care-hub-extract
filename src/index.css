@@ -17,24 +17,32 @@ All colors MUST be HSL.
     --popover: 0 0% 100%;
     --popover-foreground: 222.2 84% 4.9%;
 
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
+    --primary: 160 84% 39%;
+    --primary-foreground: 0 0% 100%;
 
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 160 20% 96%;
+    --secondary-foreground: 160 84% 20%;
 
     --muted: 210 40% 96.1%;
     --muted-foreground: 215.4 16.3% 46.9%;
 
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
+    --accent: 160 50% 92%;
+    --accent-foreground: 160 84% 20%;
 
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 210 40% 98%;
 
     --border: 214.3 31.8% 91.4%;
     --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
+    --ring: 160 84% 39%;
+
+    /* Medical themed colors */
+    --medical-primary: 160 84% 39%;
+    --medical-secondary: 200 84% 45%;
+    --medical-success: 142 76% 36%;
+    --medical-warning: 45 93% 47%;
+    --medical-danger: 0 84% 60%;
+    --medical-info: 217 91% 60%;
 
     --radius: 0.5rem;
 
