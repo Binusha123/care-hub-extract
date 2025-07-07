@@ -14,7 +14,69 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      emergencies: {
+        Row: {
+          condition: string
+          created_at: string
+          id: string
+          location: string
+          patient_id: string
+          patient_name: string | null
+          resolved: boolean | null
+          triggered_by: string | null
+          updated_at: string
+        }
+        Insert: {
+          condition: string
+          created_at?: string
+          id?: string
+          location: string
+          patient_id: string
+          patient_name?: string | null
+          resolved?: boolean | null
+          triggered_by?: string | null
+          updated_at?: string
+        }
+        Update: {
+          condition?: string
+          created_at?: string
+          id?: string
+          location?: string
+          patient_id?: string
+          patient_name?: string | null
+          resolved?: boolean | null
+          triggered_by?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          created_at: string
+          id: string
+          name: string | null
+          role: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name?: string | null
+          role?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string | null
+          role?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

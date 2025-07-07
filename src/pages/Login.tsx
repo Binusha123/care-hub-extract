@@ -27,7 +27,7 @@ const Login = () => {
       if (error) throw error;
 
       // Get user profile to determine role
-      const { data: profile } = await (supabase as any)
+      const { data: profile } = await supabase
         .from('profiles')
         .select('role')
         .eq('user_id', data.user.id)

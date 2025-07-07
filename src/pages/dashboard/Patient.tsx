@@ -30,7 +30,7 @@ const PatientDashboard = () => {
       }
 
       // Get user profile from database
-      const { data: profile } = await (supabase as any)
+      const { data: profile } = await supabase
         .from('profiles')
         .select('*')
         .eq('user_id', user.id)

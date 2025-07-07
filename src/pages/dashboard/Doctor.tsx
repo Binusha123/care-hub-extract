@@ -43,7 +43,7 @@ const DoctorDashboard = () => {
       }
 
       // Get user profile from database
-      const { data: profile } = await (supabase as any)
+      const { data: profile } = await supabase
         .from('profiles')
         .select('*')
         .eq('user_id', user.id)
@@ -62,7 +62,7 @@ const DoctorDashboard = () => {
   useEffect(() => {
     const fetchEmergencies = async () => {
       try {
-        const { data, error } = await (supabase as any)
+        const { data, error } = await supabase
           .from('emergencies')
           .select('*')
           .eq('resolved', false)
@@ -120,7 +120,7 @@ const DoctorDashboard = () => {
 
   const handleResolveEmergency = async (emergencyId: string) => {
     try {
-      const { error } = await (supabase as any)
+      const { error } = await supabase
         .from('emergencies')
         .update({ resolved: true })
         .eq('id', emergencyId);
