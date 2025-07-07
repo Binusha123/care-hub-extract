@@ -42,10 +42,17 @@ const DoctorDashboard = () => {
         return;
       }
 
+      // Get user profile from database
+      const { data: profile } = await (supabase as any)
+        .from('profiles')
+        .select('*')
+        .eq('user_id', user.id)
+        .single();
+
       setUser({
         ...user,
-        name: user.user_metadata?.name || user.email,
-        role: user.user_metadata?.role || 'doctor'
+        name: profile?.name || user.email,
+        role: profile?.role || 'doctor'
       });
     };
 

@@ -26,13 +26,22 @@ const Login = () => {
 
       if (error) throw error;
 
+      // Get user profile to determine role
+      const { data: profile } = await (supabase as any)
+        .from('profiles')
+        .select('role')
+        .eq('user_id', data.user.id)
+        .single();
+
+      const userRole = profile?.role || 'patient';
+
       toast({
         title: "Welcome back!",
         description: "Login successful",
       });
 
-      // For now, redirect to patient dashboard
-      navigate(`/dashboard/patient`);
+      // Redirect based on user role
+      navigate(`/dashboard/${userRole}`);
     } catch (error: any) {
       toast({
         variant: "destructive",
