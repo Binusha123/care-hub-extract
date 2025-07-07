@@ -1,4 +1,8 @@
 // Update this page (the content is just a fallback if you fail to update the page)
+import { Link } from "react-router-dom";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { User, Heart, StethoscopeIcon as Stethoscope } from "lucide-react";
 
 const Index = () => {
   return (
@@ -74,6 +78,49 @@ const Index = () => {
             <p className="text-muted-foreground">
               Enterprise-grade security with encrypted data storage and HIPAA-compliant infrastructure.
             </p>
+          </div>
+        </div>
+
+        {/* Dashboard Access Section */}
+        <div className="mb-16">
+          <div className="text-center mb-8">
+            <h3 className="text-2xl font-bold mb-4">Choose Your Dashboard</h3>
+            <p className="text-muted-foreground">Access your personalized healthcare dashboard</p>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <Card className="text-center p-8 hover:shadow-lg transition-shadow">
+              <div className="bg-blue-100 dark:bg-blue-900 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                <User className="h-8 w-8 text-blue-600 dark:text-blue-400" />
+              </div>
+              <h3 className="text-xl font-semibold mb-2">Patient Dashboard</h3>
+              <p className="text-muted-foreground mb-4">Upload medical reports and get AI-powered health insights</p>
+              <Button asChild variant="outline">
+                <Link to="/dashboard/patient">Access Dashboard</Link>
+              </Button>
+            </Card>
+
+            <Card className="text-center p-8 hover:shadow-lg transition-shadow">
+              <div className="bg-green-100 dark:bg-green-900 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Heart className="h-8 w-8 text-green-600 dark:text-green-400" />
+              </div>
+              <h3 className="text-xl font-semibold mb-2">Staff Dashboard</h3>
+              <p className="text-muted-foreground mb-4">Monitor patients and trigger emergency alerts when needed</p>
+              <Button asChild variant="outline">
+                <Link to="/dashboard/staff">Staff Access</Link>
+              </Button>
+            </Card>
+
+            <Card className="text-center p-8 hover:shadow-lg transition-shadow">
+              <div className="bg-red-100 dark:bg-red-900 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Stethoscope className="h-8 w-8 text-red-600 dark:text-red-400" />
+              </div>
+              <h3 className="text-xl font-semibold mb-2">Doctor Dashboard</h3>
+              <p className="text-muted-foreground mb-4">Receive real-time emergency alerts and manage critical cases</p>
+              <Button asChild variant="outline">
+                <Link to="/dashboard/doctor">Doctor Access</Link>
+              </Button>
+            </Card>
           </div>
         </div>
 
