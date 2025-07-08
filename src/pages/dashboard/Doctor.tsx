@@ -3,6 +3,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { 
   Heart, 
   AlertTriangle,
@@ -11,7 +14,10 @@ import {
   Clock,
   MapPin,
   FileText,
-  CheckCircle
+  CheckCircle,
+  Settings,
+  Users,
+  Activity
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -27,10 +33,34 @@ interface Emergency {
   resolved: boolean;
 }
 
+interface DoctorShift {
+  id: string;
+  doctor_id: string;
+  shift_start: string;
+  shift_end: string;
+  status: 'on-duty' | 'off-duty';
+  response_status: 'available' | 'on-round' | 'in-surgery' | 'busy';
+}
+
+interface PatientToday {
+  id: string;
+  patient_name: string;
+  appointment_time: string;
+  condition: string;
+}
+
 const DoctorDashboard = () => {
   const [user, setUser] = useState<any>(null);
   const [emergencies, setEmergencies] = useState<Emergency[]>([]);
   const [loading, setLoading] = useState(true);
+  const [shift, setShift] = useState<DoctorShift | null>(null);
+  const [patientsToday, setPatientsToday] = useState<PatientToday[]>([]);
+  const [shiftForm, setShiftForm] = useState({
+    shift_start: '',
+    shift_end: '',
+    status: 'off-duty' as 'on-duty' | 'off-duty',
+    response_status: 'available' as 'available' | 'on-round' | 'in-surgery' | 'busy'
+  });
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -52,12 +82,56 @@ const DoctorDashboard = () => {
       setUser({
         ...user,
         name: profile?.name || user.email,
-        role: profile?.role || 'doctor'
+        role: profile?.role || 'doctor',
+        department: profile?.department || 'General'
       });
+
+      // Fetch doctor's shift info
+      fetchShiftInfo(user.id);
+      fetchPatientsToday(user.id);
     };
 
     getUser();
   }, [navigate]);
+
+  const fetchShiftInfo = async (doctorId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('doctor_shifts')
+        .select('*')
+        .eq('doctor_id', doctorId)
+        .single();
+
+      if (data) {
+        setShift(data as DoctorShift);
+        setShiftForm({
+          shift_start: data.shift_start,
+          shift_end: data.shift_end,
+          status: data.status as 'on-duty' | 'off-duty',
+          response_status: data.response_status as 'available' | 'on-round' | 'in-surgery' | 'busy'
+        });
+      }
+    } catch (error) {
+      console.log('No shift info found');
+    }
+  };
+
+  const fetchPatientsToday = async (doctorId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('patients_today')
+        .select('*')
+        .eq('doctor_id', doctorId)
+        .eq('date', new Date().toISOString().split('T')[0])
+        .order('appointment_time');
+
+      if (data) {
+        setPatientsToday(data);
+      }
+    } catch (error) {
+      console.error('Error fetching patients:', error);
+    }
+  };
 
   useEffect(() => {
     const fetchEmergencies = async () => {
@@ -118,6 +192,63 @@ const DoctorDashboard = () => {
     };
   }, [toast]);
 
+  // Real-time shift updates
+  useEffect(() => {
+    if (!user) return;
+
+    const shiftSubscription = supabase
+      .channel('doctor_shifts_changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'doctor_shifts',
+          filter: `doctor_id=eq.${user.id}`
+        },
+        (payload) => {
+          if (payload.eventType === 'UPDATE' || payload.eventType === 'INSERT') {
+            setShift(payload.new as DoctorShift);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      shiftSubscription.unsubscribe();
+    };
+  }, [user]);
+
+  // Check for shift end notification
+  useEffect(() => {
+    if (!shift || shift.status !== 'on-duty') return;
+
+    const checkShiftEnd = () => {
+      const now = new Date();
+      const currentTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+      const shiftEndTime = shift.shift_end;
+      
+      // Calculate 15 minutes before shift end
+      const [endHour, endMinute] = shiftEndTime.split(':').map(Number);
+      const shiftEndDate = new Date();
+      shiftEndDate.setHours(endHour, endMinute - 15, 0, 0);
+      
+      const currentDate = new Date();
+      currentDate.setHours(now.getHours(), now.getMinutes(), 0, 0);
+
+      if (currentDate.getTime() === shiftEndDate.getTime()) {
+        toast({
+          title: "Shift Ending Soon",
+          description: "Your shift ends in 15 minutes. Update your patients or finalize any open alerts.",
+          variant: "default"
+        });
+      }
+    };
+
+    const interval = setInterval(checkShiftEnd, 60000); // Check every minute
+    return () => clearInterval(interval);
+  }, [shift, toast]);
+
   const handleResolveEmergency = async (emergencyId: string) => {
     try {
       const { error } = await supabase
@@ -138,6 +269,102 @@ const DoctorDashboard = () => {
       toast({
         title: "Error",
         description: "Failed to resolve emergency",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleSaveShift = async () => {
+    if (!user || !shiftForm.shift_start || !shiftForm.shift_end) {
+      toast({
+        title: "Missing Information",
+        description: "Please fill in both shift start and end times",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    try {
+      const shiftData = {
+        doctor_id: user.id,
+        shift_start: shiftForm.shift_start,
+        shift_end: shiftForm.shift_end,
+        status: shiftForm.status,
+        response_status: shiftForm.response_status
+      };
+
+      if (shift) {
+        const { error } = await supabase
+          .from('doctor_shifts')
+          .update(shiftData)
+          .eq('id', shift.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from('doctor_shifts')
+          .insert(shiftData);
+        if (error) throw error;
+      }
+
+      toast({
+        title: "Shift Updated",
+        description: "Your shift information has been saved successfully",
+      });
+    } catch (error) {
+      console.error('Error saving shift:', error);
+      toast({
+        title: "Error",
+        description: "Failed to save shift information",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleStatusChange = async (newStatus: 'on-duty' | 'off-duty') => {
+    if (!shift) return;
+
+    try {
+      const { error } = await supabase
+        .from('doctor_shifts')
+        .update({ status: newStatus })
+        .eq('id', shift.id);
+
+      if (error) throw error;
+
+      toast({
+        title: "Status Updated",
+        description: `You are now ${newStatus}`,
+      });
+    } catch (error) {
+      console.error('Error updating status:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update status",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleResponseStatusChange = async (newResponseStatus: string) => {
+    if (!shift) return;
+
+    try {
+      const { error } = await supabase
+        .from('doctor_shifts')
+        .update({ response_status: newResponseStatus })
+        .eq('id', shift.id);
+
+      if (error) throw error;
+
+      toast({
+        title: "Response Status Updated",
+        description: `Your status is now ${newResponseStatus}`,
+      });
+    } catch (error) {
+      console.error('Error updating response status:', error);
+      toast({
+        title: "Error",
+        description: "Failed to update response status",
         variant: "destructive"
       });
     }
@@ -199,6 +426,110 @@ const DoctorDashboard = () => {
           <p className="text-muted-foreground">
             Monitor active emergencies and respond to critical situations.
           </p>
+        </div>
+
+        {/* Shift Management Panel */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+          {/* Shift Schedule Card */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Settings className="h-5 w-5" />
+                Shift Schedule
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="shift_start">Shift Start</Label>
+                  <Input
+                    id="shift_start"
+                    type="time"
+                    value={shiftForm.shift_start}
+                    onChange={(e) => setShiftForm(prev => ({ ...prev, shift_start: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="shift_end">Shift End</Label>
+                  <Input
+                    id="shift_end"
+                    type="time"
+                    value={shiftForm.shift_end}
+                    onChange={(e) => setShiftForm(prev => ({ ...prev, shift_end: e.target.value }))}
+                  />
+                </div>
+              </div>
+              
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium">Shift Status:</span>
+                  <Badge variant={shift?.status === 'on-duty' ? 'default' : 'secondary'}>
+                    {shift?.status || 'off-duty'}
+                  </Badge>
+                </div>
+                {shift && (
+                  <Button
+                    size="sm"
+                    variant={shift.status === 'on-duty' ? 'destructive' : 'default'}
+                    onClick={() => handleStatusChange(shift.status === 'on-duty' ? 'off-duty' : 'on-duty')}
+                  >
+                    {shift.status === 'on-duty' ? 'Go Off Duty' : 'Go On Duty'}
+                  </Button>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label>Response Status</Label>
+                <Select
+                  value={shift?.response_status || 'available'}
+                  onValueChange={handleResponseStatusChange}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="available">Available</SelectItem>
+                    <SelectItem value="on-round">On Round</SelectItem>
+                    <SelectItem value="in-surgery">In Surgery</SelectItem>
+                    <SelectItem value="busy">Busy</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <Button onClick={handleSaveShift} className="w-full">
+                Save Shift Schedule
+              </Button>
+            </CardContent>
+          </Card>
+
+          {/* Patients Today Card */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Users className="h-5 w-5" />
+                Patients Today ({patientsToday.length})
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {patientsToday.length === 0 ? (
+                <p className="text-muted-foreground text-center py-4">No patients scheduled for today</p>
+              ) : (
+                <div className="space-y-3">
+                  {patientsToday.map((patient) => (
+                    <div key={patient.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                      <div>
+                        <p className="font-medium">{patient.patient_name}</p>
+                        <p className="text-sm text-muted-foreground">{patient.condition}</p>
+                      </div>
+                      <Badge variant="outline">
+                        {patient.appointment_time}
+                      </Badge>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </div>
 
         {/* Emergency Notifications Panel */}
@@ -315,7 +646,7 @@ const DoctorDashboard = () => {
                 <FileText className="h-8 w-8 text-blue-500" />
                 <div>
                   <p className="text-sm text-muted-foreground">Patients Today</p>
-                  <p className="text-2xl font-bold">12</p>
+                  <p className="text-2xl font-bold">{patientsToday.length}</p>
                 </div>
               </div>
             </CardContent>
@@ -327,7 +658,7 @@ const DoctorDashboard = () => {
                 <Clock className="h-8 w-8 text-green-500" />
                 <div>
                   <p className="text-sm text-muted-foreground">Shift Status</p>
-                  <p className="text-lg font-semibold">On Duty</p>
+                  <p className="text-lg font-semibold">{shift?.status || 'Off Duty'}</p>
                 </div>
               </div>
             </CardContent>
@@ -336,10 +667,10 @@ const DoctorDashboard = () => {
           <Card>
             <CardContent className="p-6">
               <div className="flex items-center gap-3">
-                <Heart className="h-8 w-8 text-primary" />
+                <Activity className="h-8 w-8 text-primary" />
                 <div>
-                  <p className="text-sm text-muted-foreground">Response Time</p>
-                  <p className="text-2xl font-bold">3min</p>
+                  <p className="text-sm text-muted-foreground">Response Status</p>
+                  <p className="text-lg font-semibold capitalize">{shift?.response_status || 'Available'}</p>
                 </div>
               </div>
             </CardContent>

@@ -14,6 +14,39 @@ export type Database = {
   }
   public: {
     Tables: {
+      doctor_shifts: {
+        Row: {
+          created_at: string
+          doctor_id: string
+          id: string
+          response_status: string
+          shift_end: string
+          shift_start: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          doctor_id: string
+          id?: string
+          response_status?: string
+          shift_end: string
+          shift_start: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          doctor_id?: string
+          id?: string
+          response_status?: string
+          shift_end?: string
+          shift_start?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       emergencies: {
         Row: {
           condition: string
@@ -50,9 +83,43 @@ export type Database = {
         }
         Relationships: []
       }
+      patients_today: {
+        Row: {
+          appointment_time: string
+          condition: string
+          created_at: string
+          date: string
+          doctor_id: string
+          id: string
+          patient_name: string
+          updated_at: string
+        }
+        Insert: {
+          appointment_time: string
+          condition: string
+          created_at?: string
+          date?: string
+          doctor_id: string
+          id?: string
+          patient_name: string
+          updated_at?: string
+        }
+        Update: {
+          appointment_time?: string
+          condition?: string
+          created_at?: string
+          date?: string
+          doctor_id?: string
+          id?: string
+          patient_name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           created_at: string
+          department: string | null
           id: string
           name: string | null
           role: string | null
@@ -61,6 +128,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          department?: string | null
           id?: string
           name?: string | null
           role?: string | null
@@ -69,6 +137,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          department?: string | null
           id?: string
           name?: string | null
           role?: string | null

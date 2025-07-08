@@ -9,15 +9,29 @@ import {
   FileText, 
   Activity, 
   User,
-  LogOut
+  LogOut,
+  Users,
+  Clock
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
 
+interface DoctorShift {
+  id: string;
+  doctor_id: string;
+  shift_start: string;
+  shift_end: string;
+  status: 'on-duty' | 'off-duty';
+  response_status: 'available' | 'on-round' | 'in-surgery' | 'busy';
+  doctor_name?: string;
+  department?: string;
+}
+
 const PatientDashboard = () => {
   const [user, setUser] = useState<any>(null);
   const [reports, setReports] = useState<any[]>([]);
+  const [doctorShifts, setDoctorShifts] = useState<DoctorShift[]>([]);
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -44,10 +58,74 @@ const PatientDashboard = () => {
 
       // Mock reports data for now
       setReports([]);
+
+      // Fetch doctor shifts
+      fetchDoctorShifts();
     };
 
     getUser();
   }, [navigate]);
+
+  useEffect(() => {
+    // Real-time subscription for doctor shifts
+    const shiftSubscription = supabase
+      .channel('patient_doctor_shifts_changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'doctor_shifts'
+        },
+        () => {
+          fetchDoctorShifts();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      shiftSubscription.unsubscribe();
+    };
+  }, []);
+
+  const fetchDoctorShifts = async () => {
+    try {
+      const { data: shifts, error: shiftsError } = await supabase
+        .from('doctor_shifts')
+        .select('*');
+
+      if (shiftsError) throw shiftsError;
+
+      if (!shifts) {
+        setDoctorShifts([]);
+        return;
+      }
+
+      // Get doctor profiles
+      const doctorIds = shifts.map(shift => shift.doctor_id);
+      const { data: profiles, error: profilesError } = await supabase
+        .from('profiles')
+        .select('user_id, name, department')
+        .in('user_id', doctorIds);
+
+      if (profilesError) throw profilesError;
+
+      const shiftsWithDetails = shifts.map(shift => {
+        const profile = profiles?.find(p => p.user_id === shift.doctor_id);
+        return {
+          ...shift,
+          status: shift.status as 'on-duty' | 'off-duty',
+          response_status: shift.response_status as 'available' | 'on-round' | 'in-surgery' | 'busy',
+          doctor_name: profile?.name || 'Unknown Doctor',
+          department: profile?.department || 'General'
+        } as DoctorShift;
+      });
+
+      setDoctorShifts(shiftsWithDetails);
+    } catch (error) {
+      console.error('Error fetching doctor shifts:', error);
+    }
+  };
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -109,10 +187,10 @@ const PatientDashboard = () => {
           <Card>
             <CardContent className="p-6">
               <div className="flex items-center gap-3">
-                <Calendar className="h-8 w-8 text-blue-500" />
+                <Users className="h-8 w-8 text-blue-500" />
                 <div>
-                  <p className="text-sm text-muted-foreground">Next Appointment</p>
-                  <p className="text-lg font-semibold">Dec 15</p>
+                  <p className="text-sm text-muted-foreground">Available Doctors</p>
+                  <p className="text-2xl font-bold">{doctorShifts.filter(s => s.status === 'on-duty').length}</p>
                 </div>
               </div>
             </CardContent>
@@ -142,6 +220,63 @@ const PatientDashboard = () => {
             </CardContent>
           </Card>
         </div>
+
+        {/* Doctor Availability Section */}
+        <Card className="mb-8">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Users className="h-6 w-6" />
+              Doctor Availability
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {doctorShifts
+                .filter(shift => shift.department && (user.department === shift.department || !user.department))
+                .map((shift) => (
+                <Card key={shift.id} className={`${shift.status === 'off-duty' ? 'opacity-50' : ''}`}>
+                  <CardContent className="p-4">
+                    <div className="flex items-start justify-between mb-2">
+                      <div>
+                        <h4 className="font-semibold">{shift.doctor_name}</h4>
+                        <p className="text-sm text-muted-foreground">{shift.department}</p>
+                      </div>
+                      <Badge variant={shift.status === 'on-duty' ? 'default' : 'secondary'}>
+                        {shift.status}
+                      </Badge>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between text-sm">
+                        <span>Available:</span>
+                        <span>{shift.shift_start} - {shift.shift_end}</span>
+                      </div>
+                      
+                      <div className="flex items-center justify-between text-sm">
+                        <span>Status:</span>
+                        <Badge variant="outline">
+                          {shift.response_status}
+                        </Badge>
+                      </div>
+
+                      {shift.status === 'on-duty' && shift.response_status === 'available' && (
+                        <div className="mt-2">
+                          <Badge variant="default" className="bg-green-600">
+                            Available Now
+                          </Badge>
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+            
+            {doctorShifts.length === 0 && (
+              <p className="text-muted-foreground text-center py-4">No doctor information available</p>
+            )}
+          </CardContent>
+        </Card>
 
         {/* File Upload Section */}
         <div className="mb-8">
