@@ -28,10 +28,28 @@ interface DoctorShift {
   department?: string;
 }
 
+interface TreatmentQueue {
+  id: string;
+  patient_id: string;
+  patient_name: string;
+  doctor_id: string;
+  department: string;
+  priority: 'high' | 'medium' | 'low';
+  room_number: string;
+  status: 'assigned' | 'en-route' | 'with-patient' | 'completed';
+  estimated_arrival_minutes?: number;
+  assigned_at: string;
+  treatment_started_at?: string;
+  treatment_completed_at?: string;
+  notes?: string;
+  doctor_name?: string;
+}
+
 const PatientDashboard = () => {
   const [user, setUser] = useState<any>(null);
   const [reports, setReports] = useState<any[]>([]);
   const [doctorShifts, setDoctorShifts] = useState<DoctorShift[]>([]);
+  const [myTreatment, setMyTreatment] = useState<TreatmentQueue | null>(null);
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -61,6 +79,9 @@ const PatientDashboard = () => {
 
       // Fetch doctor shifts
       fetchDoctorShifts();
+      
+      // Fetch my treatment queue
+      fetchMyTreatment(user.id);
     };
 
     getUser();
@@ -83,10 +104,29 @@ const PatientDashboard = () => {
       )
       .subscribe();
 
+    // Real-time subscription for my treatment queue
+    const treatmentSubscription = supabase
+      .channel('patient_treatment_queue_changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'treatment_queue'
+        },
+        () => {
+          if (user) {
+            fetchMyTreatment(user.id);
+          }
+        }
+      )
+      .subscribe();
+
     return () => {
       shiftSubscription.unsubscribe();
+      treatmentSubscription.unsubscribe();
     };
-  }, []);
+  }, [user]);
 
   const fetchDoctorShifts = async () => {
     try {
@@ -124,6 +164,44 @@ const PatientDashboard = () => {
       setDoctorShifts(shiftsWithDetails);
     } catch (error) {
       console.error('Error fetching doctor shifts:', error);
+    }
+  };
+
+  const fetchMyTreatment = async (userId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('treatment_queue')
+        .select('*')
+        .eq('patient_id', userId)
+        .eq('status', 'assigned')
+        .or('status.eq.en-route,status.eq.with-patient')
+        .order('assigned_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (error && error.code !== 'PGRST116') {
+        throw error;
+      }
+
+      if (data) {
+        // Get doctor profile
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('name')
+          .eq('user_id', data.doctor_id)
+          .single();
+
+        setMyTreatment({
+          ...data,
+          priority: data.priority as 'high' | 'medium' | 'low',
+          status: data.status as 'assigned' | 'en-route' | 'with-patient' | 'completed',
+          doctor_name: profile?.name || 'Unknown Doctor'
+        });
+      } else {
+        setMyTreatment(null);
+      }
+    } catch (error) {
+      console.error('Error fetching my treatment:', error);
     }
   };
 
@@ -220,6 +298,65 @@ const PatientDashboard = () => {
             </CardContent>
           </Card>
         </div>
+
+        {/* Doctor on the Way Section */}
+        {myTreatment && (
+          <Card className="mb-8 border-blue-200 dark:border-blue-800">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-blue-600 dark:text-blue-400">
+                <Clock className="h-6 w-6" />
+                Doctor on the Way
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-lg font-semibold">{myTreatment.doctor_name}</h3>
+                    <p className="text-muted-foreground">{myTreatment.department}</p>
+                  </div>
+                  <Badge variant={
+                    myTreatment.status === 'with-patient' ? 'default' :
+                    myTreatment.status === 'en-route' ? 'secondary' : 'outline'
+                  }>
+                    {myTreatment.status === 'with-patient' ? 'With Patient' :
+                     myTreatment.status === 'en-route' ? 'En Route' :
+                     myTreatment.status === 'assigned' ? 'Assigned' : myTreatment.status}
+                  </Badge>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Room Number</p>
+                    <p className="font-medium">{myTreatment.room_number}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Priority</p>
+                    <Badge variant={
+                      myTreatment.priority === 'high' ? 'destructive' :
+                      myTreatment.priority === 'medium' ? 'default' : 'secondary'
+                    }>
+                      {myTreatment.priority}
+                    </Badge>
+                  </div>
+                </div>
+                
+                {myTreatment.estimated_arrival_minutes && (
+                  <div className="bg-blue-50 dark:bg-blue-950/20 p-3 rounded-lg">
+                    <p className="text-sm text-muted-foreground">Estimated Arrival</p>
+                    <p className="text-lg font-semibold text-blue-600 dark:text-blue-400">
+                      {myTreatment.estimated_arrival_minutes} minutes
+                    </p>
+                  </div>
+                )}
+                
+                <div className="text-xs text-muted-foreground">
+                  Assigned: {new Date(myTreatment.assigned_at).toLocaleString()}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Doctor Availability Section */}
         <Card className="mb-8">

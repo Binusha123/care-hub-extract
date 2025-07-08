@@ -146,6 +146,60 @@ export type Database = {
         }
         Relationships: []
       }
+      treatment_queue: {
+        Row: {
+          assigned_at: string
+          created_at: string
+          department: string
+          doctor_id: string
+          estimated_arrival_minutes: number | null
+          id: string
+          notes: string | null
+          patient_id: string
+          patient_name: string
+          priority: string
+          room_number: string
+          status: string
+          treatment_completed_at: string | null
+          treatment_started_at: string | null
+          updated_at: string
+        }
+        Insert: {
+          assigned_at?: string
+          created_at?: string
+          department: string
+          doctor_id: string
+          estimated_arrival_minutes?: number | null
+          id?: string
+          notes?: string | null
+          patient_id: string
+          patient_name: string
+          priority?: string
+          room_number: string
+          status?: string
+          treatment_completed_at?: string | null
+          treatment_started_at?: string | null
+          updated_at?: string
+        }
+        Update: {
+          assigned_at?: string
+          created_at?: string
+          department?: string
+          doctor_id?: string
+          estimated_arrival_minutes?: number | null
+          id?: string
+          notes?: string | null
+          patient_id?: string
+          patient_name?: string
+          priority?: string
+          room_number?: string
+          status?: string
+          treatment_completed_at?: string | null
+          treatment_started_at?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

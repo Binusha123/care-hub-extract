@@ -49,12 +49,29 @@ interface PatientToday {
   condition: string;
 }
 
+interface TreatmentQueue {
+  id: string;
+  patient_id: string;
+  patient_name: string;
+  doctor_id: string;
+  department: string;
+  priority: 'high' | 'medium' | 'low';
+  room_number: string;
+  status: 'assigned' | 'en-route' | 'with-patient' | 'completed';
+  estimated_arrival_minutes?: number;
+  assigned_at: string;
+  treatment_started_at?: string;
+  treatment_completed_at?: string;
+  notes?: string;
+}
+
 const DoctorDashboard = () => {
   const [user, setUser] = useState<any>(null);
   const [emergencies, setEmergencies] = useState<Emergency[]>([]);
   const [loading, setLoading] = useState(true);
   const [shift, setShift] = useState<DoctorShift | null>(null);
   const [patientsToday, setPatientsToday] = useState<PatientToday[]>([]);
+  const [treatmentQueue, setTreatmentQueue] = useState<TreatmentQueue[]>([]);
   const [shiftForm, setShiftForm] = useState({
     shift_start: '',
     shift_end: '',
@@ -89,6 +106,7 @@ const DoctorDashboard = () => {
       // Fetch doctor's shift info
       fetchShiftInfo(user.id);
       fetchPatientsToday(user.id);
+      fetchTreatmentQueue(user.id);
     };
 
     getUser();
@@ -130,6 +148,28 @@ const DoctorDashboard = () => {
       }
     } catch (error) {
       console.error('Error fetching patients:', error);
+    }
+  };
+
+  const fetchTreatmentQueue = async (doctorId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('treatment_queue')
+        .select('*')
+        .eq('doctor_id', doctorId)
+        .neq('status', 'completed')
+        .order('priority', { ascending: true })
+        .order('assigned_at', { ascending: true });
+
+      if (error) throw error;
+      const typedData = (data || []).map(item => ({
+        ...item,
+        priority: item.priority as 'high' | 'medium' | 'low',
+        status: item.status as 'assigned' | 'en-route' | 'with-patient' | 'completed'
+      }));
+      setTreatmentQueue(typedData);
+    } catch (error) {
+      console.error('Error fetching treatment queue:', error);
     }
   };
 
@@ -187,10 +227,29 @@ const DoctorDashboard = () => {
       )
       .subscribe();
 
+    // Real-time subscription for treatment queue
+    const treatmentSubscription = supabase
+      .channel('doctor_treatment_queue_changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'treatment_queue'
+        },
+        () => {
+          if (user) {
+            fetchTreatmentQueue(user.id);
+          }
+        }
+      )
+      .subscribe();
+
     return () => {
       subscription.unsubscribe();
+      treatmentSubscription.unsubscribe();
     };
-  }, [toast]);
+  }, [toast, user]);
 
   // Real-time shift updates
   useEffect(() => {
@@ -370,6 +429,84 @@ const DoctorDashboard = () => {
     }
   };
 
+  const handleStartTreatment = async (treatmentId: string) => {
+    try {
+      const { error } = await supabase
+        .from('treatment_queue')
+        .update({ 
+          status: 'with-patient',
+          treatment_started_at: new Date().toISOString()
+        })
+        .eq('id', treatmentId);
+
+      if (error) throw error;
+
+      toast({
+        title: "Treatment Started",
+        description: "Patient status updated to 'With Patient'",
+      });
+    } catch (error) {
+      console.error('Error starting treatment:', error);
+      toast({
+        title: "Error",
+        description: "Failed to start treatment",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleCompleteTreatment = async (treatmentId: string) => {
+    try {
+      const { error } = await supabase
+        .from('treatment_queue')
+        .update({ 
+          status: 'completed',
+          treatment_completed_at: new Date().toISOString()
+        })
+        .eq('id', treatmentId);
+
+      if (error) throw error;
+
+      toast({
+        title: "Treatment Completed",
+        description: "Patient has been marked as treated",
+      });
+    } catch (error) {
+      console.error('Error completing treatment:', error);
+      toast({
+        title: "Error",
+        description: "Failed to complete treatment",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleSetETA = async (treatmentId: string, minutes: number) => {
+    try {
+      const { error } = await supabase
+        .from('treatment_queue')
+        .update({ 
+          estimated_arrival_minutes: minutes,
+          status: 'en-route'
+        })
+        .eq('id', treatmentId);
+
+      if (error) throw error;
+
+      toast({
+        title: "ETA Updated",
+        description: `Estimated arrival time set to ${minutes} minutes`,
+      });
+    } catch (error) {
+      console.error('Error setting ETA:', error);
+      toast({
+        title: "Error",
+        description: "Failed to set ETA",
+        variant: "destructive"
+      });
+    }
+  };
+
   const handleLogout = async () => {
     await supabase.auth.signOut();
     toast({
@@ -427,6 +564,93 @@ const DoctorDashboard = () => {
             Monitor active emergencies and respond to critical situations.
           </p>
         </div>
+
+        {/* Treatment Queue Panel */}
+        <Card className="mb-8">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Activity className="h-6 w-6" />
+              Treatment Queue ({treatmentQueue.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {treatmentQueue.length === 0 ? (
+              <p className="text-muted-foreground text-center py-4">No patients in treatment queue</p>
+            ) : (
+              <div className="space-y-4">
+                {treatmentQueue.map((treatment) => (
+                  <Card key={treatment.id} className="border-l-4 border-l-blue-500">
+                    <CardContent className="p-4">
+                      <div className="flex items-start justify-between mb-3">
+                        <div>
+                          <h4 className="font-semibold">{treatment.patient_name}</h4>
+                          <p className="text-sm text-muted-foreground">Room {treatment.room_number} • {treatment.department}</p>
+                        </div>
+                        <div className="flex gap-2">
+                          <Badge variant={
+                            treatment.priority === 'high' ? 'destructive' :
+                            treatment.priority === 'medium' ? 'default' : 'secondary'
+                          }>
+                            {treatment.priority} priority
+                          </Badge>
+                          <Badge variant="outline">
+                            {treatment.status}
+                          </Badge>
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="flex gap-2">
+                          {treatment.status === 'assigned' && (
+                            <>
+                              <Button 
+                                size="sm" 
+                                onClick={() => handleSetETA(treatment.id, 5)}
+                                variant="outline"
+                              >
+                                Set ETA 5min
+                              </Button>
+                              <Button 
+                                size="sm" 
+                                onClick={() => handleStartTreatment(treatment.id)}
+                              >
+                                Start Treatment
+                              </Button>
+                            </>
+                          )}
+                          {treatment.status === 'en-route' && (
+                            <Button 
+                              size="sm" 
+                              onClick={() => handleStartTreatment(treatment.id)}
+                            >
+                              Start Treatment
+                            </Button>
+                          )}
+                          {treatment.status === 'with-patient' && (
+                            <Button 
+                              size="sm" 
+                              onClick={() => handleCompleteTreatment(treatment.id)}
+                              variant="outline"
+                            >
+                              Complete Treatment
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                      
+                      <div className="text-xs text-muted-foreground">
+                        Assigned: {new Date(treatment.assigned_at).toLocaleString()}
+                        {treatment.estimated_arrival_minutes && (
+                          <span className="ml-2">• ETA: {treatment.estimated_arrival_minutes} min</span>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         {/* Shift Management Panel */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
