@@ -6,6 +6,8 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import PatientsToday from "@/components/appointments/PatientsToday";
+import AppointmentList from "@/components/appointments/AppointmentList";
 import { 
   Heart, 
   AlertTriangle,
@@ -663,6 +665,16 @@ const DoctorDashboard = () => {
           </CardContent>
         </Card>
 
+        {/* Patients Today Section */}
+        <div className="mb-8">
+          <PatientsToday doctorId={user.id} />
+        </div>
+
+        {/* Appointment List Section */}
+        <div className="mb-8">
+          <AppointmentList patientId={user.id} isPatient={false} />
+        </div>
+
         {/* Shift Management Panel */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
           {/* Shift Schedule Card */}
@@ -737,32 +749,33 @@ const DoctorDashboard = () => {
             </CardContent>
           </Card>
 
-          {/* Patients Today Card */}
+          {/* Quick Stats Card */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <Users className="h-5 w-5" />
-                Patients Today ({patientsToday.length})
+                <Activity className="h-5 w-5" />
+                Quick Stats
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {patientsToday.length === 0 ? (
-                <p className="text-muted-foreground text-center py-4">No patients scheduled for today</p>
-              ) : (
-                <div className="space-y-3">
-                  {patientsToday.map((patient) => (
-                    <div key={patient.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-                      <div>
-                        <p className="font-medium">{patient.patient_name}</p>
-                        <p className="text-sm text-muted-foreground">{patient.condition}</p>
-                      </div>
-                      <Badge variant="outline">
-                        {patient.appointment_time}
-                      </Badge>
-                    </div>
-                  ))}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="text-center p-3 bg-muted rounded-lg">
+                  <div className="text-2xl font-bold text-blue-600">{patientsToday.length}</div>
+                  <div className="text-sm text-muted-foreground">Today's Patients</div>
                 </div>
-              )}
+                <div className="text-center p-3 bg-muted rounded-lg">
+                  <div className="text-2xl font-bold text-red-600">{emergencies.length}</div>
+                  <div className="text-sm text-muted-foreground">Active Emergencies</div>
+                </div>
+                <div className="text-center p-3 bg-muted rounded-lg">
+                  <div className="text-2xl font-bold text-green-600">{treatmentQueue.length}</div>
+                  <div className="text-sm text-muted-foreground">In Queue</div>
+                </div>
+                <div className="text-center p-3 bg-muted rounded-lg">
+                  <div className="text-lg font-bold text-primary">{shift?.status || 'Off Duty'}</div>
+                  <div className="text-sm text-muted-foreground">Current Status</div>
+                </div>
+              </div>
             </CardContent>
           </Card>
         </div>

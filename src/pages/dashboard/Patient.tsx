@@ -3,6 +3,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import FileUpload from "@/components/FileUpload";
+import AppointmentBooking from "@/components/appointments/AppointmentBooking";
+import AppointmentList from "@/components/appointments/AppointmentList";
 import { 
   Heart, 
   Calendar, 
@@ -414,6 +416,16 @@ const PatientDashboard = () => {
             )}
           </CardContent>
         </Card>
+
+        {/* Appointment Booking Section */}
+        <div className="mb-8">
+          <AppointmentBooking patientId={user.id} patientName={user.name} />
+        </div>
+
+        {/* My Appointments Section */}
+        <div className="mb-8">
+          <AppointmentList patientId={user.id} isPatient={true} />
+        </div>
 
         {/* File Upload Section */}
         <div className="mb-8">
