@@ -22,6 +22,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
+import { useNotifications } from "@/hooks/useNotifications";
 
 interface Emergency {
   id: string;
@@ -80,6 +81,7 @@ const DoctorDashboard = () => {
   });
   const { toast } = useToast();
   const navigate = useNavigate();
+  const { permission, requestPermission, showNotification } = useNotifications('doctor');
 
   useEffect(() => {
     const getUser = async () => {
@@ -193,6 +195,11 @@ const DoctorDashboard = () => {
 
     fetchEmergencies();
 
+    // Request notification permission for doctors
+    if (permission === 'default') {
+      requestPermission();
+    }
+
     // Set up real-time subscription
     const subscription = supabase
       .channel('emergencies')
@@ -210,6 +217,10 @@ const DoctorDashboard = () => {
             const newEmergency = payload.new as Emergency;
             if (!newEmergency.resolved) {
               setEmergencies(prev => [newEmergency, ...prev]);
+              
+              // Show browser notification
+              showNotification("🚨 Emergency Alert", `Emergency: ${newEmergency.condition} at ${newEmergency.location}`);
+              
               toast({
                 title: "🚨 NEW EMERGENCY ALERT",
                 description: `Patient ${newEmergency.patient_id} - ${newEmergency.location}`,
@@ -249,7 +260,7 @@ const DoctorDashboard = () => {
       subscription.unsubscribe();
       treatmentSubscription.unsubscribe();
     };
-  }, [toast, user]);
+  }, [permission, requestPermission, showNotification, toast, user]);
 
   // Real-time shift updates
   useEffect(() => {

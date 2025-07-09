@@ -20,6 +20,7 @@ import {
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
+import { useNotifications } from "@/hooks/useNotifications";
 
 interface DoctorShift {
   id: string;
@@ -70,6 +71,7 @@ const StaffDashboard = () => {
   });
   const { toast } = useToast();
   const navigate = useNavigate();
+  const { showNotification } = useNotifications('staff');
 
   useEffect(() => {
     const getUser = async () => {
@@ -301,6 +303,9 @@ const StaffDashboard = () => {
         });
 
       if (error) throw error;
+
+      // Show local notification
+      showNotification("Emergency Alert Triggered", "All doctors have been notified of the emergency.");
 
       toast({
         title: "Emergency Alert Sent",
