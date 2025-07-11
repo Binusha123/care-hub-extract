@@ -155,7 +155,6 @@ export const useNotifications = (userRole?: string) => {
         icon: '/favicon.ico',
         badge: '/favicon.ico',
         requireInteraction: false,
-        vibrate: [200, 100, 200],
         tag: `notification-${Date.now()}`,
         timestamp: Date.now(),
         silent: false,
@@ -165,6 +164,11 @@ export const useNotifications = (userRole?: string) => {
       console.log('Showing notification:', title, notificationOptions);
 
       const notification = new Notification(title, notificationOptions);
+
+      // Handle vibration separately if supported
+      if ('vibrate' in navigator && navigator.vibrate) {
+        navigator.vibrate([200, 100, 200]);
+      }
 
       // Auto-close notification after 10 seconds unless it requires interaction
       if (!notificationOptions.requireInteraction) {
@@ -192,13 +196,17 @@ export const useNotifications = (userRole?: string) => {
 
   const testNotification = () => {
     if (permission === 'granted') {
+      // Handle vibration separately
+      if ('vibrate' in navigator && navigator.vibrate) {
+        navigator.vibrate([300, 100, 300, 100, 300]);
+      }
+      
       showNotification(
         "🧪 Test Emergency Alert",
         "This is a test emergency notification to verify mobile alerts are working properly.",
         {
           requireInteraction: true,
           tag: 'test-emergency',
-          vibrate: [300, 100, 300, 100, 300],
           actions: [
             { action: 'respond', title: 'Respond' },
             { action: 'dismiss', title: 'Dismiss' }

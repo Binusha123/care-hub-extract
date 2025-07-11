@@ -184,13 +184,17 @@ const DoctorDashboard = () => {
         (payload) => {
           // Show immediate notification for new emergencies
           if (permission === 'granted') {
+            // Handle vibration separately
+            if ('vibrate' in navigator && navigator.vibrate) {
+              navigator.vibrate([200, 100, 200, 100, 200]);
+            }
+            
             showNotification(
               "🚨 NEW EMERGENCY ALERT",
               `Emergency at ${payload.new.location}: ${payload.new.condition}`,
               {
                 requireInteraction: true,
                 tag: `emergency-${payload.new.id}`,
-                vibrate: [200, 100, 200, 100, 200],
                 actions: [
                   { action: 'respond', title: 'Respond Now' },
                   { action: 'dismiss', title: 'Dismiss' }
