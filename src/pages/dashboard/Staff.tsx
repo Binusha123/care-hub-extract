@@ -49,6 +49,7 @@ interface SystemStats {
   totalEmergencies: number;
   pendingTreatments: number;
   todayAppointments: number;
+  totalUsers: number;
 }
 
 const StaffDashboard = () => {
@@ -60,7 +61,8 @@ const StaffDashboard = () => {
     totalDoctors: 0,
     totalEmergencies: 0,
     pendingTreatments: 0,
-    todayAppointments: 0
+    todayAppointments: 0,
+    totalUsers: 0
   });
   const [formData, setFormData] = useState({
     patient_id: "",
@@ -108,6 +110,10 @@ const StaffDashboard = () => {
     try {
       console.log('🔄 Fetching real-time system statistics...');
       
+      // Get total registered users
+      const { data: { users }, error: usersError } = await supabase.auth.admin.listUsers();
+      const totalUsers = users?.length || 0;
+      
       const [doctorsResult, emergenciesResult, treatmentsResult, appointmentsResult] = await Promise.all([
         supabase.from('profiles').select('user_id', { count: 'exact' }).eq('role', 'doctor'),
         supabase.from('emergencies').select('id', { count: 'exact' }).eq('resolved', false),
@@ -119,7 +125,8 @@ const StaffDashboard = () => {
         totalDoctors: doctorsResult.count || 0,
         totalEmergencies: emergenciesResult.count || 0,
         pendingTreatments: treatmentsResult.count || 0,
-        todayAppointments: appointmentsResult.count || 0
+        todayAppointments: appointmentsResult.count || 0,
+        totalUsers: totalUsers
       };
 
       console.log('📊 Updated system stats:', newStats);
@@ -330,18 +337,19 @@ const StaffDashboard = () => {
         console.error('❌ Error sending notifications:', notificationError);
         toast({
           title: "Emergency Created",
-          description: "Emergency alert created but failed to send notifications to some doctors",
+          description: "Emergency alert created but failed to send notifications",
           variant: "destructive"
         });
       } else {
         console.log('✅ Notification result:', notificationResult);
+        const emailsSent = notificationResult.doctorEmailsSent || [];
         toast({
           title: "Emergency Alert Sent",
-          description: `Emergency alert sent to ${notificationResult.notificationsSent || 0} doctors via email`,
+          description: `Emergency alert sent to ${notificationResult.notificationsSent || 0} users via email${emailsSent.length > 0 ? `. Emails sent to: ${emailsSent.slice(0, 3).join(', ')}${emailsSent.length > 3 ? '...' : ''}` : ''}`,
         });
       }
 
-      showNotification("Emergency Alert Triggered", `Emergency alert sent to all doctors for patient at ${formData.location}`);
+      showNotification("Emergency Alert Triggered", `Emergency alert sent to all registered users for patient at ${formData.location}`);
 
       setFormData({
         patient_id: "",
@@ -404,13 +412,25 @@ const StaffDashboard = () => {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
+          <Card className="bg-gradient-to-r from-green-50 to-green-100 border-green-200">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <Users className="h-6 w-6 text-green-600" />
+                <div>
+                  <p className="text-xs text-green-600 font-medium">Total Users</p>
+                  <p className="text-2xl font-bold text-green-700">{systemStats.totalUsers}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
           <Card className="bg-gradient-to-r from-blue-50 to-blue-100 border-blue-200">
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
                 <Users className="h-6 w-6 text-blue-600" />
                 <div>
-                  <p className="text-xs text-blue-600 font-medium">Total Doctors</p>
+                  <p className="text-xs text-blue-600 font-medium">Doctor Profiles</p>
                   <p className="text-2xl font-bold text-blue-700">{systemStats.totalDoctors}</p>
                 </div>
               </div>
@@ -653,7 +673,7 @@ const StaffDashboard = () => {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Users className="h-6 w-6" />
-              Available Doctors ({doctorProfiles.length} doctors)
+              Available Doctors ({doctorProfiles.length} doctor profiles)
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -674,7 +694,13 @@ const StaffDashboard = () => {
             </div>
             
             {doctorProfiles.length === 0 && (
-              <p className="text-muted-foreground text-center py-4">No doctors found in the system</p>
+              <div className="text-center py-8">
+                <p className="text-muted-foreground mb-2">No doctor profiles found</p>
+                <p className="text-sm text-muted-foreground">
+                  Total registered users: {systemStats.totalUsers} | 
+                  Doctor profiles: {systemStats.totalDoctors}
+                </p>
+              </div>
             )}
           </CardContent>
         </Card>
