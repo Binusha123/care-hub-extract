@@ -26,21 +26,28 @@ serve(async (req: Request) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  console.log('Emergency email function called');
+  console.log('🚨 Emergency email function called');
 
   try {
     const resendApiKey = Deno.env.get('RESEND_API_KEY');
     
     if (!resendApiKey) {
-      console.error('RESEND_API_KEY not configured');
-      throw new Error('RESEND_API_KEY not configured');
+      console.error('❌ RESEND_API_KEY not configured');
+      return new Response(JSON.stringify({ 
+        success: false, 
+        error: 'RESEND_API_KEY not configured. Please add it in Supabase Edge Functions settings.' 
+      }), {
+        status: 500,
+        headers: { "Content-Type": "application/json", ...corsHeaders },
+      });
     }
 
     const resend = new Resend(resendApiKey);
     const { to, doctorName, subject, html, emergencyDetails }: EmergencyEmailRequest = await req.json();
 
-    console.log(`Sending emergency email to ${to} for emergency ${emergencyDetails.emergencyId}`);
+    console.log(`📧 Sending emergency email to ${to} for emergency ${emergencyDetails.emergencyId}`);
 
+    // Use the same email domain as login emails
     const emailResponse = await resend.emails.send({
       from: "MediAid Emergency <emergency@resend.dev>",
       to: [to],
@@ -53,7 +60,7 @@ serve(async (req: Request) => {
       }
     });
 
-    console.log("Emergency email sent successfully:", emailResponse);
+    console.log("✅ Emergency email sent successfully:", emailResponse);
 
     return new Response(JSON.stringify({
       success: true,
@@ -68,12 +75,13 @@ serve(async (req: Request) => {
     });
 
   } catch (error: any) {
-    console.error("Error sending emergency email:", error);
+    console.error("❌ Error sending emergency email:", error);
     
     return new Response(
       JSON.stringify({ 
         success: false,
-        error: error.message 
+        error: error.message,
+        details: 'Check if RESEND_API_KEY is properly configured in Supabase Edge Functions settings'
       }),
       {
         status: 500,

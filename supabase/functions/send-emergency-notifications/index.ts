@@ -28,98 +28,92 @@ serve(async (req: Request) => {
   try {
     const { emergencyId, patientName, location, condition, priority = 'high' }: EmergencyNotificationRequest = await req.json();
 
-    console.log('Processing emergency notification:', { emergencyId, patientName, location, condition, priority });
+    console.log('🚨 Processing emergency notification:', { emergencyId, patientName, location, condition, priority });
 
-    // Get all doctors who are on duty
-    const { data: doctorShifts, error: shiftsError } = await supabase
-      .from('doctor_shifts')
-      .select(`
-        doctor_id,
-        profiles!inner (
-          user_id,
-          name,
-          role
-        )
-      `)
-      .eq('status', 'on-duty')
-      .eq('profiles.role', 'doctor');
-
-    if (shiftsError) {
-      console.error('Error fetching doctor shifts:', shiftsError);
-      throw shiftsError;
-    }
-
-    console.log('Found on-duty doctors:', doctorShifts?.length || 0);
-
-    const doctorIds = doctorShifts?.map(shift => shift.doctor_id) || [];
-    
-    if (doctorIds.length === 0) {
-      console.log('No on-duty doctors found');
-      return new Response(
-        JSON.stringify({ success: true, message: 'No on-duty doctors to notify', notificationsSent: 0 }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // Get doctor emails from auth.users via profiles
-    const { data: profiles, error: profilesError } = await supabase
+    // Get all doctor profiles with their emails
+    const { data: doctorProfiles, error: profilesError } = await supabase
       .from('profiles')
       .select('user_id, name')
-      .in('user_id', doctorIds);
+      .eq('role', 'doctor');
 
     if (profilesError) {
-      console.error('Error fetching doctor profiles:', profilesError);
+      console.error('❌ Error fetching doctor profiles:', profilesError);
       throw profilesError;
+    }
+
+    console.log(`📋 Found ${doctorProfiles?.length || 0} doctors in the system`);
+
+    if (!doctorProfiles || doctorProfiles.length === 0) {
+      console.log('⚠️ No doctors found in the system');
+      return new Response(
+        JSON.stringify({ 
+          success: true, 
+          message: 'No doctors found to notify', 
+          notificationsSent: 0 
+        }),
+        { 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 200 
+        }
+      );
     }
 
     let successfulNotifications = 0;
     let failedNotifications = 0;
 
     // Send email to each doctor
-    for (const profile of profiles || []) {
+    for (const profile of doctorProfiles) {
       try {
         // Get user details including email
         const { data: { user }, error: userError } = await supabase.auth.admin.getUserById(profile.user_id);
         
         if (userError || !user?.email) {
-          console.error(`Error getting user email for ${profile.user_id}:`, userError);
+          console.error(`❌ Error getting user email for ${profile.user_id}:`, userError);
           failedNotifications++;
           continue;
         }
 
-        console.log(`Sending email notification to doctor ${profile.name} at ${user.email}...`);
+        console.log(`📧 Sending email notification to Dr. ${profile.name} at ${user.email}...`);
         
         // Call the send-emergency-email function
         const { data: emailResult, error: emailError } = await supabase.functions.invoke('send-emergency-email', {
           body: {
             to: user.email,
-            doctorName: profile.name,
-            subject: `🚨 EMERGENCY ALERT - IMMEDIATE RESPONSE REQUIRED`,
+            doctorName: profile.name || 'Doctor',
+            subject: `🚨 EMERGENCY ALERT - ${location.toUpperCase()}`,
             html: `
-              <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-                <h1 style="color: #dc2626; font-size: 24px; margin-bottom: 20px;">🚨 EMERGENCY ALERT</h1>
-                
-                <div style="background-color: #fee2e2; border: 1px solid #fecaca; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
-                  <h2 style="color: #991b1b; margin-top: 0;">Emergency Details</h2>
-                  ${patientName ? `<p><strong>Patient:</strong> ${patientName}</p>` : ''}
-                  <p><strong>Location:</strong> ${location}</p>
-                  <p><strong>Condition:</strong> ${condition}</p>
-                  <p><strong>Priority:</strong> <span style="color: #dc2626; font-weight: bold;">${priority.toUpperCase()}</span></p>
-                  <p><strong>Time:</strong> ${new Date().toLocaleString()}</p>
+              <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #ffffff;">
+                <div style="background-color: #dc2626; color: white; padding: 20px; text-align: center;">
+                  <h1 style="margin: 0; font-size: 24px;">🚨 EMERGENCY ALERT</h1>
+                  <p style="margin: 5px 0 0 0; font-size: 16px;">IMMEDIATE MEDICAL ATTENTION REQUIRED</p>
                 </div>
                 
-                <div style="margin: 20px 0;">
-                  <p style="font-size: 16px; font-weight: bold; color: #dc2626;">
-                    ⚠️ IMMEDIATE ACTION REQUIRED
+                <div style="padding: 30px 20px;">
+                  <div style="background-color: #fee2e2; border-left: 4px solid #dc2626; padding: 20px; margin-bottom: 20px;">
+                    <h2 style="color: #991b1b; margin-top: 0; font-size: 18px;">Emergency Details</h2>
+                    ${patientName ? `<p style="margin: 8px 0;"><strong>Patient:</strong> ${patientName}</p>` : ''}
+                    <p style="margin: 8px 0;"><strong>Location:</strong> ${location}</p>
+                    <p style="margin: 8px 0;"><strong>Condition:</strong> ${condition}</p>
+                    <p style="margin: 8px 0;"><strong>Priority:</strong> <span style="color: #dc2626; font-weight: bold;">${priority.toUpperCase()}</span></p>
+                    <p style="margin: 8px 0;"><strong>Time:</strong> ${new Date().toLocaleString()}</p>
+                  </div>
+                  
+                  <div style="background-color: #f59e0b; color: white; padding: 15px; text-align: center; margin: 20px 0; border-radius: 5px;">
+                    <p style="margin: 0; font-size: 16px; font-weight: bold;">⚠️ IMMEDIATE ACTION REQUIRED</p>
+                  </div>
+                  
+                  <p style="font-size: 16px; line-height: 1.6;">
+                    Dear Dr. ${profile.name || 'Doctor'},<br><br>
+                    This is a critical emergency alert from the MediAid system. Please respond immediately and proceed to the specified location for emergency medical assistance.
                   </p>
-                  <p>This is a critical emergency alert. Please respond immediately and proceed to the specified location.</p>
-                </div>
-                
-                <div style="background-color: #f3f4f6; border-radius: 8px; padding: 15px;">
-                  <p style="margin: 0; font-size: 14px; color: #6b7280;">
-                    Emergency ID: ${emergencyId}<br>
-                    Sent from MediAid Emergency System
-                  </p>
+                  
+                  <div style="background-color: #f3f4f6; padding: 15px; border-radius: 5px; margin-top: 30px;">
+                    <p style="margin: 0; font-size: 12px; color: #6b7280;">
+                      Emergency ID: ${emergencyId}<br>
+                      Sent from MediAid Emergency System<br>
+                      Time: ${new Date().toISOString()}
+                    </p>
+                  </div>
                 </div>
               </div>
             `,
@@ -134,7 +128,7 @@ serve(async (req: Request) => {
         });
 
         if (emailError) {
-          console.error(`Failed to send email to ${user.email}:`, emailError);
+          console.error(`❌ Failed to send email to ${user.email}:`, emailError);
           failedNotifications++;
         } else {
           console.log(`✅ Email notification sent successfully to ${user.email}`);
@@ -142,7 +136,7 @@ serve(async (req: Request) => {
         }
 
       } catch (error) {
-        console.error(`Error processing notification for doctor ${profile.user_id}:`, error);
+        console.error(`❌ Error processing notification for doctor ${profile.user_id}:`, error);
         failedNotifications++;
       }
     }
@@ -156,18 +150,18 @@ serve(async (req: Request) => {
       .eq('id', emergencyId);
 
     if (updateError) {
-      console.error('Error updating emergency record:', updateError);
+      console.error('⚠️ Error updating emergency record:', updateError);
     }
 
     const responseData = { 
       success: true, 
       notificationsSent: successfulNotifications,
       notificationsFailed: failedNotifications,
-      totalDoctors: doctorIds.length,
+      totalDoctors: doctorProfiles.length,
       message: `Emergency alert sent to ${successfulNotifications} doctors via email${failedNotifications > 0 ? ` (${failedNotifications} failed)` : ''}`
     };
 
-    console.log('Emergency notification summary:', responseData);
+    console.log('📊 Emergency notification summary:', responseData);
 
     return new Response(
       JSON.stringify(responseData),
@@ -183,7 +177,8 @@ serve(async (req: Request) => {
       JSON.stringify({ 
         error: error.message,
         success: false,
-        notificationsSent: 0
+        notificationsSent: 0,
+        details: 'Emergency notification system error'
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
