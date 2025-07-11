@@ -30,7 +30,7 @@ serve(async (req: Request) => {
 
     console.log('🚨 Processing emergency notification:', { emergencyId, patientName, location, condition, priority });
 
-    // Get ALL doctor profiles (removed duty status check)
+    // Get ALL doctor profiles - no duty status check
     const { data: doctorProfiles, error: profilesError } = await supabase
       .from('profiles')
       .select('user_id, name, department')
@@ -139,18 +139,6 @@ serve(async (req: Request) => {
         console.error(`❌ Error processing notification for doctor ${profile.user_id}:`, error);
         failedNotifications++;
       }
-    }
-
-    // Update emergency record with notification status
-    const { error: updateError } = await supabase
-      .from('emergencies')
-      .update({ 
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', emergencyId);
-
-    if (updateError) {
-      console.error('⚠️ Error updating emergency record:', updateError);
     }
 
     const responseData = { 

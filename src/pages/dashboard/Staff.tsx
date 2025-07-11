@@ -11,7 +11,6 @@ import {
   AlertTriangle,
   User,
   LogOut,
-  MapPin,
   FileText,
   Activity,
   Clock,
@@ -22,14 +21,9 @@ import { useToast } from "@/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
 import { useNotifications } from "@/hooks/useNotifications";
 
-interface DoctorShift {
-  id: string;
-  doctor_id: string;
-  shift_start: string;
-  shift_end: string;
-  status: 'on-duty' | 'off-duty';
-  response_status: 'available' | 'on-round' | 'in-surgery' | 'busy';
-  doctor_name?: string;
+interface DoctorProfile {
+  user_id: string;
+  name?: string;
   department?: string;
 }
 
@@ -52,7 +46,6 @@ interface TreatmentQueue {
 
 interface SystemStats {
   totalDoctors: number;
-  onDutyDoctors: number;
   totalEmergencies: number;
   pendingTreatments: number;
   todayAppointments: number;
@@ -61,11 +54,10 @@ interface SystemStats {
 const StaffDashboard = () => {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(false);
-  const [doctorShifts, setDoctorShifts] = useState<DoctorShift[]>([]);
+  const [doctorProfiles, setDoctorProfiles] = useState<DoctorProfile[]>([]);
   const [treatmentQueue, setTreatmentQueue] = useState<TreatmentQueue[]>([]);
   const [systemStats, setSystemStats] = useState<SystemStats>({
     totalDoctors: 0,
-    onDutyDoctors: 0,
     totalEmergencies: 0,
     pendingTreatments: 0,
     todayAppointments: 0
@@ -96,7 +88,6 @@ const StaffDashboard = () => {
         return;
       }
 
-      // Get user profile from database
       const { data: profile } = await supabase
         .from('profiles')
         .select('*')
@@ -117,10 +108,8 @@ const StaffDashboard = () => {
     try {
       console.log('🔄 Fetching real-time system statistics...');
       
-      // Fetch all statistics in parallel for better performance
-      const [doctorsResult, shiftsResult, emergenciesResult, treatmentsResult, appointmentsResult] = await Promise.all([
+      const [doctorsResult, emergenciesResult, treatmentsResult, appointmentsResult] = await Promise.all([
         supabase.from('profiles').select('user_id', { count: 'exact' }).eq('role', 'doctor'),
-        supabase.from('doctor_shifts').select('id', { count: 'exact' }).eq('status', 'on-duty'),
         supabase.from('emergencies').select('id', { count: 'exact' }).eq('resolved', false),
         supabase.from('treatment_queue').select('id', { count: 'exact' }).neq('status', 'completed'),
         supabase.from('patients_today').select('id', { count: 'exact' }).eq('date', new Date().toISOString().split('T')[0])
@@ -128,7 +117,6 @@ const StaffDashboard = () => {
 
       const newStats = {
         totalDoctors: doctorsResult.count || 0,
-        onDutyDoctors: shiftsResult.count || 0,
         totalEmergencies: emergenciesResult.count || 0,
         pendingTreatments: treatmentsResult.count || 0,
         todayAppointments: appointmentsResult.count || 0
@@ -148,18 +136,12 @@ const StaffDashboard = () => {
   };
 
   useEffect(() => {
-    fetchDoctorShifts();
+    fetchDoctorProfiles();
     fetchTreatmentQueue();
     fetchSystemStats();
 
-    // Real-time subscription for all relevant changes
     const channel = supabase
       .channel('staff_dashboard_updates')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'doctor_shifts' }, () => {
-        console.log('🔄 Doctor shifts updated');
-        fetchDoctorShifts();
-        fetchSystemStats();
-      })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'treatment_queue' }, () => {
         console.log('🔄 Treatment queue updated');
         fetchTreatmentQueue();
@@ -171,6 +153,7 @@ const StaffDashboard = () => {
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => {
         console.log('🔄 Profiles updated');
+        fetchDoctorProfiles();
         fetchSystemStats();
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'patients_today' }, () => {
@@ -179,7 +162,6 @@ const StaffDashboard = () => {
       })
       .subscribe();
 
-    // Refresh stats every 30 seconds
     const interval = setInterval(() => {
       fetchSystemStats();
     }, 30000);
@@ -190,57 +172,17 @@ const StaffDashboard = () => {
     };
   }, []);
 
-  const fetchDoctorShifts = async () => {
+  const fetchDoctorProfiles = async () => {
     try {
-      // First get all doctor profiles
-      const { data: profiles, error: profilesError } = await supabase
+      const { data: profiles, error } = await supabase
         .from('profiles')
         .select('user_id, name, department')
         .eq('role', 'doctor');
 
-      if (profilesError) throw profilesError;
-
-      if (!profiles || profiles.length === 0) {
-        setDoctorShifts([]);
-        return;
-      }
-
-      // Then get their shifts
-      const { data: shifts, error: shiftsError } = await supabase
-        .from('doctor_shifts')
-        .select('*');
-
-      if (shiftsError) throw shiftsError;
-
-      // Combine profile and shift data
-      const shiftsWithDetails = (shifts || []).map(shift => {
-        const profile = profiles.find(p => p.user_id === shift.doctor_id);
-        return {
-          ...shift,
-          status: shift.status as 'on-duty' | 'off-duty',
-          response_status: shift.response_status as 'available' | 'on-round' | 'in-surgery' | 'busy',
-          doctor_name: profile?.name || 'Unknown Doctor',
-          department: profile?.department || 'General'
-        } as DoctorShift;
-      });
-
-      // Include doctors without shifts as off-duty
-      const doctorsWithoutShifts = profiles.filter(profile => 
-        !shifts?.some(shift => shift.doctor_id === profile.user_id)
-      ).map(profile => ({
-        id: `no-shift-${profile.user_id}`,
-        doctor_id: profile.user_id,
-        shift_start: '00:00',
-        shift_end: '00:00',
-        status: 'off-duty' as const,
-        response_status: 'available' as const,
-        doctor_name: profile.name || 'Unknown Doctor',
-        department: profile.department || 'General'
-      }));
-
-      setDoctorShifts([...shiftsWithDetails, ...doctorsWithoutShifts]);
+      if (error) throw error;
+      setDoctorProfiles(profiles || []);
     } catch (error) {
-      console.error('❌ Error fetching doctor shifts:', error);
+      console.error('❌ Error fetching doctor profiles:', error);
     }
   };
 
@@ -260,7 +202,6 @@ const StaffDashboard = () => {
         return;
       }
 
-      // Get doctor profiles
       const doctorIds = treatments.map(t => t.doctor_id);
       const { data: profiles, error: profilesError } = await supabase
         .from('profiles')
@@ -324,7 +265,6 @@ const StaffDashboard = () => {
         description: `${assignmentForm.patient_name} has been assigned to a doctor`,
       });
 
-      // Reset form
       setAssignmentForm({
         patient_id: "",
         patient_name: "",
@@ -357,7 +297,6 @@ const StaffDashboard = () => {
 
     setLoading(true);
     try {
-      // Create emergency in database
       const { data: emergency, error } = await supabase
         .from('emergencies')
         .insert({
@@ -374,7 +313,6 @@ const StaffDashboard = () => {
 
       console.log('🚨 Emergency created:', emergency);
 
-      // Send email notifications to ALL doctors
       const { data: notificationResult, error: notificationError } = await supabase.functions.invoke(
         'send-emergency-notifications',
         {
@@ -403,10 +341,8 @@ const StaffDashboard = () => {
         });
       }
 
-      // Show local notification to staff
       showNotification("Emergency Alert Triggered", `Emergency alert sent to all doctors for patient at ${formData.location}`);
 
-      // Reset form
       setFormData({
         patient_id: "",
         patient_name: "",
@@ -414,7 +350,6 @@ const StaffDashboard = () => {
         condition: ""
       });
 
-      // Refresh stats immediately
       fetchSystemStats();
     } catch (error) {
       console.error('❌ Error creating emergency:', error);
@@ -441,7 +376,6 @@ const StaffDashboard = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
       <header className="border-b bg-card">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -470,8 +404,7 @@ const StaffDashboard = () => {
           </p>
         </div>
 
-        {/* Real-time System Statistics */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
           <Card className="bg-gradient-to-r from-blue-50 to-blue-100 border-blue-200">
             <CardContent className="p-4">
               <div className="flex items-center gap-3">
@@ -479,18 +412,6 @@ const StaffDashboard = () => {
                 <div>
                   <p className="text-xs text-blue-600 font-medium">Total Doctors</p>
                   <p className="text-2xl font-bold text-blue-700">{systemStats.totalDoctors}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-gradient-to-r from-green-50 to-green-100 border-green-200">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <Activity className="h-6 w-6 text-green-600" />
-                <div>
-                  <p className="text-xs text-green-600 font-medium">Doctors On Duty</p>
-                  <p className="text-2xl font-bold text-green-700">{systemStats.onDutyDoctors}</p>
                 </div>
               </div>
             </CardContent>
@@ -533,7 +454,6 @@ const StaffDashboard = () => {
           </Card>
         </div>
 
-        {/* Treatment Coordination Panel */}
         <Card className="mb-8 border-blue-200 dark:border-blue-800">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-blue-600 dark:text-blue-400">
@@ -574,9 +494,9 @@ const StaffDashboard = () => {
                     <SelectValue placeholder="Select a doctor" />
                   </SelectTrigger>
                   <SelectContent>
-                    {doctorShifts.map((shift) => (
-                      <SelectItem key={shift.doctor_id} value={shift.doctor_id}>
-                        {shift.doctor_name} - {shift.department} ({shift.status})
+                    {doctorProfiles.map((doctor) => (
+                      <SelectItem key={doctor.user_id} value={doctor.user_id}>
+                        {doctor.name} - {doctor.department}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -631,7 +551,6 @@ const StaffDashboard = () => {
           </CardContent>
         </Card>
 
-        {/* Current Treatment Queue */}
         <Card className="mb-8">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -670,7 +589,6 @@ const StaffDashboard = () => {
           </CardContent>
         </Card>
 
-        {/* Emergency Trigger Panel */}
         <Card className="mb-8 border-red-200 dark:border-red-800">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-red-600 dark:text-red-400">
@@ -731,48 +649,31 @@ const StaffDashboard = () => {
           </CardContent>
         </Card>
 
-        {/* Doctor Availability Panel */}
         <Card className="mb-8">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Users className="h-6 w-6" />
-              Doctor Availability ({doctorShifts.length} doctors)
+              Available Doctors ({doctorProfiles.length} doctors)
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {doctorShifts.map((shift) => (
-                <Card key={shift.id} className={`${shift.status === 'off-duty' ? 'opacity-50' : ''}`}>
+              {doctorProfiles.map((doctor) => (
+                <Card key={doctor.user_id}>
                   <CardContent className="p-4">
                     <div className="flex items-start justify-between mb-2">
                       <div>
-                        <h4 className="font-semibold">{shift.doctor_name}</h4>
-                        <p className="text-sm text-muted-foreground">{shift.department}</p>
+                        <h4 className="font-semibold">{doctor.name}</h4>
+                        <p className="text-sm text-muted-foreground">{doctor.department}</p>
                       </div>
-                      <Badge variant={shift.status === 'on-duty' ? 'default' : 'secondary'}>
-                        {shift.status}
-                      </Badge>
-                    </div>
-                    
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between text-sm">
-                        <span>Shift:</span>
-                        <span>{shift.shift_start} - {shift.shift_end}</span>
-                      </div>
-                      
-                      <div className="flex items-center justify-between text-sm">
-                        <span>Status:</span>
-                        <Badge variant="outline">
-                          {shift.response_status}
-                        </Badge>
-                      </div>
+                      <Badge variant="default">Available</Badge>
                     </div>
                   </CardContent>
                 </Card>
               ))}
             </div>
             
-            {doctorShifts.length === 0 && (
+            {doctorProfiles.length === 0 && (
               <p className="text-muted-foreground text-center py-4">No doctors found in the system</p>
             )}
           </CardContent>
