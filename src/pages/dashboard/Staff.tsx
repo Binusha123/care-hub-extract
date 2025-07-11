@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -116,35 +115,35 @@ const StaffDashboard = () => {
 
   const fetchSystemStats = async () => {
     try {
-      // Fetch system-wide statistics
-      const [doctorsResult, emergenciesResult, treatmentsResult, appointmentsResult] = await Promise.all([
-        supabase.from('profiles').select('user_id').eq('role', 'doctor'),
-        supabase.from('emergencies').select('id').eq('resolved', false),
-        supabase.from('treatment_queue').select('id').neq('status', 'completed'),
-        supabase.from('patients_today').select('id').eq('date', new Date().toISOString().split('T')[0])
+      console.log('🔄 Fetching real-time system statistics...');
+      
+      // Fetch all statistics in parallel for better performance
+      const [doctorsResult, shiftsResult, emergenciesResult, treatmentsResult, appointmentsResult] = await Promise.all([
+        supabase.from('profiles').select('user_id', { count: 'exact' }).eq('role', 'doctor'),
+        supabase.from('doctor_shifts').select('id', { count: 'exact' }).eq('status', 'on-duty'),
+        supabase.from('emergencies').select('id', { count: 'exact' }).eq('resolved', false),
+        supabase.from('treatment_queue').select('id', { count: 'exact' }).neq('status', 'completed'),
+        supabase.from('patients_today').select('id', { count: 'exact' }).eq('date', new Date().toISOString().split('T')[0])
       ]);
 
-      const { data: doctors } = doctorsResult;
-      const { data: emergencies } = emergenciesResult;
-      const { data: treatments } = treatmentsResult;
-      const { data: appointments } = appointmentsResult;
+      const newStats = {
+        totalDoctors: doctorsResult.count || 0,
+        onDutyDoctors: shiftsResult.count || 0,
+        totalEmergencies: emergenciesResult.count || 0,
+        pendingTreatments: treatmentsResult.count || 0,
+        todayAppointments: appointmentsResult.count || 0
+      };
 
-      // Count on-duty doctors
-      const { data: onDutyShifts } = await supabase
-        .from('doctor_shifts')
-        .select('id')
-        .eq('status', 'on-duty');
-
-      setSystemStats({
-        totalDoctors: doctors?.length || 0,
-        onDutyDoctors: onDutyShifts?.length || 0,
-        totalEmergencies: emergencies?.length || 0,
-        pendingTreatments: treatments?.length || 0,
-        todayAppointments: appointments?.length || 0
-      });
+      console.log('📊 Updated system stats:', newStats);
+      setSystemStats(newStats);
 
     } catch (error) {
-      console.error('Error fetching system stats:', error);
+      console.error('❌ Error fetching system stats:', error);
+      toast({
+        title: "Error",
+        description: "Failed to fetch system statistics",
+        variant: "destructive"
+      });
     }
   };
 
@@ -153,54 +152,31 @@ const StaffDashboard = () => {
     fetchTreatmentQueue();
     fetchSystemStats();
 
-    // Real-time subscription for doctor shifts
-    const shiftSubscription = supabase
-      .channel('staff_doctor_shifts_changes')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'doctor_shifts'
-        },
-        () => {
-          fetchDoctorShifts();
-          fetchSystemStats();
-        }
-      )
-      .subscribe();
-
-    // Real-time subscription for treatment queue
-    const treatmentSubscription = supabase
-      .channel('staff_treatment_queue_changes')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'treatment_queue'
-        },
-        () => {
-          fetchTreatmentQueue();
-          fetchSystemStats();
-        }
-      )
-      .subscribe();
-
-    // Real-time subscription for emergencies
-    const emergencySubscription = supabase
-      .channel('staff_emergencies_changes')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'emergencies'
-        },
-        () => {
-          fetchSystemStats();
-        }
-      )
+    // Real-time subscription for all relevant changes
+    const channel = supabase
+      .channel('staff_dashboard_updates')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'doctor_shifts' }, () => {
+        console.log('🔄 Doctor shifts updated');
+        fetchDoctorShifts();
+        fetchSystemStats();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'treatment_queue' }, () => {
+        console.log('🔄 Treatment queue updated');
+        fetchTreatmentQueue();
+        fetchSystemStats();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'emergencies' }, () => {
+        console.log('🔄 Emergencies updated');
+        fetchSystemStats();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => {
+        console.log('🔄 Profiles updated');
+        fetchSystemStats();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'patients_today' }, () => {
+        console.log('🔄 Appointments updated');
+        fetchSystemStats();
+      })
       .subscribe();
 
     // Refresh stats every 30 seconds
@@ -209,37 +185,36 @@ const StaffDashboard = () => {
     }, 30000);
 
     return () => {
-      shiftSubscription.unsubscribe();
-      treatmentSubscription.unsubscribe();
-      emergencySubscription.unsubscribe();
+      supabase.removeChannel(channel);
       clearInterval(interval);
     };
   }, []);
 
   const fetchDoctorShifts = async () => {
     try {
+      // First get all doctor profiles
+      const { data: profiles, error: profilesError } = await supabase
+        .from('profiles')
+        .select('user_id, name, department')
+        .eq('role', 'doctor');
+
+      if (profilesError) throw profilesError;
+
+      if (!profiles || profiles.length === 0) {
+        setDoctorShifts([]);
+        return;
+      }
+
+      // Then get their shifts
       const { data: shifts, error: shiftsError } = await supabase
         .from('doctor_shifts')
         .select('*');
 
       if (shiftsError) throw shiftsError;
 
-      if (!shifts) {
-        setDoctorShifts([]);
-        return;
-      }
-
-      // Get doctor profiles
-      const doctorIds = shifts.map(shift => shift.doctor_id);
-      const { data: profiles, error: profilesError } = await supabase
-        .from('profiles')
-        .select('user_id, name, department')
-        .in('user_id', doctorIds);
-
-      if (profilesError) throw profilesError;
-
-      const shiftsWithDetails = shifts.map(shift => {
-        const profile = profiles?.find(p => p.user_id === shift.doctor_id);
+      // Combine profile and shift data
+      const shiftsWithDetails = (shifts || []).map(shift => {
+        const profile = profiles.find(p => p.user_id === shift.doctor_id);
         return {
           ...shift,
           status: shift.status as 'on-duty' | 'off-duty',
@@ -249,9 +224,23 @@ const StaffDashboard = () => {
         } as DoctorShift;
       });
 
-      setDoctorShifts(shiftsWithDetails);
+      // Include doctors without shifts as off-duty
+      const doctorsWithoutShifts = profiles.filter(profile => 
+        !shifts?.some(shift => shift.doctor_id === profile.user_id)
+      ).map(profile => ({
+        id: `no-shift-${profile.user_id}`,
+        doctor_id: profile.user_id,
+        shift_start: '00:00',
+        shift_end: '00:00',
+        status: 'off-duty' as const,
+        response_status: 'available' as const,
+        doctor_name: profile.name || 'Unknown Doctor',
+        department: profile.department || 'General'
+      }));
+
+      setDoctorShifts([...shiftsWithDetails, ...doctorsWithoutShifts]);
     } catch (error) {
-      console.error('Error fetching doctor shifts:', error);
+      console.error('❌ Error fetching doctor shifts:', error);
     }
   };
 
@@ -292,7 +281,7 @@ const StaffDashboard = () => {
 
       setTreatmentQueue(treatmentsWithDetails);
     } catch (error) {
-      console.error('Error fetching treatment queue:', error);
+      console.error('❌ Error fetching treatment queue:', error);
     }
   };
 
@@ -383,9 +372,9 @@ const StaffDashboard = () => {
 
       if (error) throw error;
 
-      console.log('Emergency created:', emergency);
+      console.log('🚨 Emergency created:', emergency);
 
-      // Send email notifications to all doctors (not just on-duty ones)
+      // Send email notifications to ALL doctors
       const { data: notificationResult, error: notificationError } = await supabase.functions.invoke(
         'send-emergency-notifications',
         {
@@ -400,14 +389,14 @@ const StaffDashboard = () => {
       );
 
       if (notificationError) {
-        console.error('Error sending notifications:', notificationError);
+        console.error('❌ Error sending notifications:', notificationError);
         toast({
           title: "Emergency Created",
           description: "Emergency alert created but failed to send notifications to some doctors",
           variant: "destructive"
         });
       } else {
-        console.log('Notification result:', notificationResult);
+        console.log('✅ Notification result:', notificationResult);
         toast({
           title: "Emergency Alert Sent",
           description: `Emergency alert sent to ${notificationResult.notificationsSent || 0} doctors via email`,
@@ -424,8 +413,11 @@ const StaffDashboard = () => {
         location: "",
         condition: ""
       });
+
+      // Refresh stats immediately
+      fetchSystemStats();
     } catch (error) {
-      console.error('Error creating emergency:', error);
+      console.error('❌ Error creating emergency:', error);
       toast({
         title: "Error",
         description: "Failed to send emergency alert. Please try again.",
@@ -744,7 +736,7 @@ const StaffDashboard = () => {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Users className="h-6 w-6" />
-              Doctor Availability
+              Doctor Availability ({doctorShifts.length} doctors)
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -781,7 +773,7 @@ const StaffDashboard = () => {
             </div>
             
             {doctorShifts.length === 0 && (
-              <p className="text-muted-foreground text-center py-4">No doctor shifts found</p>
+              <p className="text-muted-foreground text-center py-4">No doctors found in the system</p>
             )}
           </CardContent>
         </Card>

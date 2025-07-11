@@ -30,7 +30,7 @@ serve(async (req: Request) => {
 
     console.log('🚨 Processing emergency notification:', { emergencyId, patientName, location, condition, priority });
 
-    // Get ALL doctor profiles (not just on-duty ones) - this is the fix!
+    // Get ALL doctor profiles (removed duty status check)
     const { data: doctorProfiles, error: profilesError } = await supabase
       .from('profiles')
       .select('user_id, name, department')
