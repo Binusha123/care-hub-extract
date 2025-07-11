@@ -59,7 +59,7 @@ export const useNotifications = (userRole?: string) => {
     }
   };
 
-  const showNotification = (title: string, body: string, options?: SimpleNotificationOptions) => {
+  const showNotification = (title: string, body: string, options?: Partial<SimpleNotificationOptions>) => {
     if (!('Notification' in window)) {
       console.warn('Notifications not supported');
       return;

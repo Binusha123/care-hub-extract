@@ -26,10 +26,13 @@ serve(async (req: Request) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  console.log('Emergency email function called');
+
   try {
     const resendApiKey = Deno.env.get('RESEND_API_KEY');
     
     if (!resendApiKey) {
+      console.error('RESEND_API_KEY not configured');
       throw new Error('RESEND_API_KEY not configured');
     }
 

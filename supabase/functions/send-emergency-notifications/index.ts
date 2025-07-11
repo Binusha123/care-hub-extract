@@ -72,13 +72,10 @@ serve(async (req: Request) => {
       throw profilesError;
     }
 
-    // Get user emails (we'll need to use the auth admin API for this)
     let successfulNotifications = 0;
     let failedNotifications = 0;
 
-    // Since we can't directly access auth.users, we'll send notifications via Supabase's built-in email system
-    // We'll create email records that can be processed by a separate email service
-    
+    // Send email to each doctor
     for (const profile of profiles || []) {
       try {
         // Get user details including email
@@ -92,54 +89,40 @@ serve(async (req: Request) => {
 
         console.log(`Sending email notification to doctor ${profile.name} at ${user.email}...`);
         
-        // Use Supabase's built-in email functionality
-        const emailSubject = `🚨 EMERGENCY ALERT - IMMEDIATE RESPONSE REQUIRED`;
-        const emailBody = `
-          <h1 style="color: #dc2626; font-size: 24px; margin-bottom: 20px;">🚨 EMERGENCY ALERT</h1>
-          
-          <div style="background-color: #fee2e2; border: 1px solid #fecaca; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
-            <h2 style="color: #991b1b; margin-top: 0;">Emergency Details</h2>
-            ${patientName ? `<p><strong>Patient:</strong> ${patientName}</p>` : ''}
-            <p><strong>Location:</strong> ${location}</p>
-            <p><strong>Condition:</strong> ${condition}</p>
-            <p><strong>Priority:</strong> <span style="color: #dc2626; font-weight: bold;">${priority.toUpperCase()}</span></p>
-            <p><strong>Time:</strong> ${new Date().toLocaleString()}</p>
-          </div>
-          
-          <div style="margin: 20px 0;">
-            <p style="font-size: 16px; font-weight: bold; color: #dc2626;">
-              ⚠️ IMMEDIATE ACTION REQUIRED
-            </p>
-            <p>This is a critical emergency alert. Please respond immediately and proceed to the specified location.</p>
-          </div>
-          
-          <div style="background-color: #f3f4f6; border-radius: 8px; padding: 15px;">
-            <p style="margin: 0; font-size: 14px; color: #6b7280;">
-              Emergency ID: ${emergencyId}<br>
-              Sent from MediAid Emergency System
-            </p>
-          </div>
-        `;
-
-        // Send email using Supabase Auth
-        const { error: emailError } = await supabase.auth.admin.inviteUserByEmail(user.email, {
-          data: {
-            emergency_alert: true,
-            emergency_id: emergencyId,
-            patient_name: patientName,
-            location: location,
-            condition: condition,
-            priority: priority
-          }
-        });
-
-        // Alternative: Use a custom email function if available
-        const { error: customEmailError } = await supabase.functions.invoke('send-emergency-email', {
+        // Call the send-emergency-email function
+        const { data: emailResult, error: emailError } = await supabase.functions.invoke('send-emergency-email', {
           body: {
             to: user.email,
             doctorName: profile.name,
-            subject: emailSubject,
-            html: emailBody,
+            subject: `🚨 EMERGENCY ALERT - IMMEDIATE RESPONSE REQUIRED`,
+            html: `
+              <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                <h1 style="color: #dc2626; font-size: 24px; margin-bottom: 20px;">🚨 EMERGENCY ALERT</h1>
+                
+                <div style="background-color: #fee2e2; border: 1px solid #fecaca; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
+                  <h2 style="color: #991b1b; margin-top: 0;">Emergency Details</h2>
+                  ${patientName ? `<p><strong>Patient:</strong> ${patientName}</p>` : ''}
+                  <p><strong>Location:</strong> ${location}</p>
+                  <p><strong>Condition:</strong> ${condition}</p>
+                  <p><strong>Priority:</strong> <span style="color: #dc2626; font-weight: bold;">${priority.toUpperCase()}</span></p>
+                  <p><strong>Time:</strong> ${new Date().toLocaleString()}</p>
+                </div>
+                
+                <div style="margin: 20px 0;">
+                  <p style="font-size: 16px; font-weight: bold; color: #dc2626;">
+                    ⚠️ IMMEDIATE ACTION REQUIRED
+                  </p>
+                  <p>This is a critical emergency alert. Please respond immediately and proceed to the specified location.</p>
+                </div>
+                
+                <div style="background-color: #f3f4f6; border-radius: 8px; padding: 15px;">
+                  <p style="margin: 0; font-size: 14px; color: #6b7280;">
+                    Emergency ID: ${emergencyId}<br>
+                    Sent from MediAid Emergency System
+                  </p>
+                </div>
+              </div>
+            `,
             emergencyDetails: {
               emergencyId,
               patientName,
@@ -148,10 +131,10 @@ serve(async (req: Request) => {
               priority
             }
           }
-        }).catch(() => ({ error: 'Email service not available' }));
+        });
 
-        if (emailError && customEmailError) {
-          console.error(`Failed to send email to ${user.email}:`, emailError || customEmailError);
+        if (emailError) {
+          console.error(`Failed to send email to ${user.email}:`, emailError);
           failedNotifications++;
         } else {
           console.log(`✅ Email notification sent successfully to ${user.email}`);

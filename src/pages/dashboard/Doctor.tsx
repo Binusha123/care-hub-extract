@@ -10,7 +10,8 @@ import {
   LogOut,
   Activity,
   Calendar,
-  Clock
+  Clock,
+  Mail
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -50,6 +51,8 @@ const DoctorDashboard = () => {
     try {
       const today = format(new Date(), 'yyyy-MM-dd');
 
+      console.log('Fetching patients for doctor:', user.id, 'on date:', today);
+
       // Fetch appointments and emergencies in parallel for better performance
       const [appointmentsResult, emergenciesResult] = await Promise.all([
         supabase
@@ -69,8 +72,17 @@ const DoctorDashboard = () => {
       const { data: appointments, error: appointmentsError } = appointmentsResult;
       const { data: emergencies, error: emergenciesError } = emergenciesResult;
 
-      if (appointmentsError) throw appointmentsError;
-      if (emergenciesError) throw emergenciesError;
+      if (appointmentsError) {
+        console.error('Appointments error:', appointmentsError);
+        throw appointmentsError;
+      }
+      if (emergenciesError) {
+        console.error('Emergencies error:', emergenciesError);
+        throw emergenciesError;
+      }
+
+      console.log('Fetched appointments:', appointments?.length || 0);
+      console.log('Fetched emergencies:', emergencies?.length || 0);
 
       // Transform data efficiently
       const appointmentPatients: PatientToday[] = appointments?.map(apt => ({
@@ -98,6 +110,8 @@ const DoctorDashboard = () => {
 
       const allPatients = [...appointmentPatients, ...emergencyPatients]
         .sort((a, b) => a.appointment_time.localeCompare(b.appointment_time));
+
+      console.log('Total patients processed:', allPatients.length);
 
       setPatients(allPatients);
       setCounts({
@@ -149,7 +163,7 @@ const DoctorDashboard = () => {
     
     fetchPatientsToday();
 
-    // Real-time subscriptions for emergency updates
+    // Real-time subscriptions for updates
     const channel = supabase
       .channel(`doctor_updates_${user.id}`)
       .on(
@@ -160,7 +174,10 @@ const DoctorDashboard = () => {
           table: 'patients_today',
           filter: `doctor_id=eq.${user.id}`
         },
-        () => fetchPatientsToday()
+        (payload) => {
+          console.log('Patients today updated:', payload);
+          fetchPatientsToday();
+        }
       )
       .on(
         'postgres_changes',
@@ -170,7 +187,10 @@ const DoctorDashboard = () => {
           table: 'treatment_queue',
           filter: `doctor_id=eq.${user.id}`
         },
-        () => fetchPatientsToday()
+        (payload) => {
+          console.log('Treatment queue updated:', payload);
+          fetchPatientsToday();
+        }
       )
       .on(
         'postgres_changes',
@@ -180,6 +200,7 @@ const DoctorDashboard = () => {
           table: 'emergencies'
         },
         (payload) => {
+          console.log('New emergency created:', payload);
           // Show browser notification for new emergencies
           if ('Notification' in window && Notification.permission === 'granted') {
             // Handle vibration separately
@@ -270,14 +291,14 @@ const DoctorDashboard = () => {
         </div>
       </header>
 
-      {/* Info Alert */}
+      {/* Email Notification Info */}
       <div className="bg-blue-50 border-l-4 border-blue-400 p-4 mb-4">
         <div className="flex">
-          <AlertTriangle className="h-5 w-5 text-blue-400 mr-2" />
+          <Mail className="h-5 w-5 text-blue-400 mr-2" />
           <div>
             <p className="text-sm text-blue-700">
-              <strong>📧 Email Notifications Active:</strong> You will receive emergency alerts via email at {user.email}. 
-              Emergency notifications are now sent directly to your registered email address for immediate attention.
+              <strong>📧 Email Emergency Alerts Active:</strong> You will receive emergency notifications via email at {user.email}. 
+              Emergency alerts are sent directly to your registered email address for immediate attention.
             </p>
           </div>
         </div>
@@ -300,18 +321,18 @@ const DoctorDashboard = () => {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {/* Summary Cards */}
-            <div className="grid grid-cols-3 gap-4 mb-6">
-              <div className="text-center p-3 bg-muted rounded-lg">
-                <div className="text-2xl font-bold text-blue-600">{counts.appointments}</div>
+            {/* Summary Cards - Responsive Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+              <div className="text-center p-4 bg-muted rounded-lg">
+                <div className="text-3xl font-bold text-blue-600">{counts.appointments}</div>
                 <div className="text-sm text-muted-foreground">Appointments</div>
               </div>
-              <div className="text-center p-3 bg-muted rounded-lg">
-                <div className="text-2xl font-bold text-red-600">{counts.emergencies}</div>
+              <div className="text-center p-4 bg-muted rounded-lg">
+                <div className="text-3xl font-bold text-red-600">{counts.emergencies}</div>
                 <div className="text-sm text-muted-foreground">Emergencies</div>
               </div>
-              <div className="text-center p-3 bg-muted rounded-lg">
-                <div className="text-2xl font-bold text-green-600">{counts.total}</div>
+              <div className="text-center p-4 bg-muted rounded-lg">
+                <div className="text-3xl font-bold text-green-600">{counts.total}</div>
                 <div className="text-sm text-muted-foreground">Total</div>
               </div>
             </div>
@@ -331,9 +352,9 @@ const DoctorDashboard = () => {
               <div className="space-y-3">
                 {patients.map((patient) => (
                   <div key={patient.id} className="border rounded-lg p-4 hover:bg-muted/50 transition-colors">
-                    <div className="flex items-start justify-between">
+                    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
                       <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-2">
+                        <div className="flex items-center gap-2 mb-2 flex-wrap">
                           {getTypeIcon(patient.type)}
                           <span className="font-medium">{patient.patient_name}</span>
                           {getStatusBadge(patient)}
