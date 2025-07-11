@@ -41,8 +41,54 @@ const DoctorDashboard = () => {
     emergencies: 0,
     total: 0
   });
+  const [realtimeStats, setRealtimeStats] = useState({
+    totalEmergencies: 0,
+    totalPatients: 0,
+    pendingTreatments: 0
+  });
   const { toast } = useToast();
   const navigate = useNavigate();
+
+  // Fetch real-time statistics
+  const fetchRealtimeStats = useCallback(async () => {
+    if (!user?.id) return;
+
+    try {
+      // Get total emergencies for this doctor
+      const { data: emergencies, error: emergenciesError } = await supabase
+        .from('emergencies')
+        .select('id')
+        .eq('resolved', false);
+
+      // Get total patients assigned to this doctor today
+      const today = format(new Date(), 'yyyy-MM-dd');
+      const { data: todayPatients, error: todayError } = await supabase
+        .from('patients_today')
+        .select('id')
+        .eq('doctor_id', user.id)
+        .eq('date', today);
+
+      // Get pending treatments for this doctor
+      const { data: treatments, error: treatmentsError } = await supabase
+        .from('treatment_queue')
+        .select('id')
+        .eq('doctor_id', user.id)
+        .neq('status', 'completed');
+
+      if (emergenciesError) console.error('Error fetching emergencies:', emergenciesError);
+      if (todayError) console.error('Error fetching today patients:', todayError);
+      if (treatmentsError) console.error('Error fetching treatments:', treatmentsError);
+
+      setRealtimeStats({
+        totalEmergencies: emergencies?.length || 0,
+        totalPatients: todayPatients?.length || 0,
+        pendingTreatments: treatments?.length || 0
+      });
+
+    } catch (error) {
+      console.error('Error fetching realtime stats:', error);
+    }
+  }, [user?.id]);
 
   // Memoized fetchPatientsToday function to prevent unnecessary re-renders
   const fetchPatientsToday = useCallback(async () => {
@@ -162,6 +208,7 @@ const DoctorDashboard = () => {
     if (!user?.id) return;
     
     fetchPatientsToday();
+    fetchRealtimeStats();
 
     // Real-time subscriptions for updates
     const channel = supabase
@@ -177,6 +224,7 @@ const DoctorDashboard = () => {
         (payload) => {
           console.log('Patients today updated:', payload);
           fetchPatientsToday();
+          fetchRealtimeStats();
         }
       )
       .on(
@@ -190,6 +238,7 @@ const DoctorDashboard = () => {
         (payload) => {
           console.log('Treatment queue updated:', payload);
           fetchPatientsToday();
+          fetchRealtimeStats();
         }
       )
       .on(
@@ -203,11 +252,6 @@ const DoctorDashboard = () => {
           console.log('New emergency created:', payload);
           // Show browser notification for new emergencies
           if ('Notification' in window && Notification.permission === 'granted') {
-            // Handle vibration separately
-            if ('vibrate' in navigator && navigator.vibrate) {
-              navigator.vibrate([200, 100, 200, 100, 200]);
-            }
-            
             new Notification("🚨 NEW EMERGENCY ALERT", {
               body: `Emergency at ${payload.new.location}: ${payload.new.condition}`,
               icon: '/favicon.ico',
@@ -222,14 +266,22 @@ const DoctorDashboard = () => {
           });
           
           fetchPatientsToday();
+          fetchRealtimeStats();
         }
       )
       .subscribe();
 
+    // Refresh data every 30 seconds
+    const interval = setInterval(() => {
+      fetchPatientsToday();
+      fetchRealtimeStats();
+    }, 30000);
+
     return () => {
       supabase.removeChannel(channel);
+      clearInterval(interval);
     };
-  }, [user?.id, fetchPatientsToday, toast]);
+  }, [user?.id, fetchPatientsToday, fetchRealtimeStats, toast]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -312,12 +364,63 @@ const DoctorDashboard = () => {
           </p>
         </div>
 
+        {/* Real-time Statistics Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+          <Card className="bg-gradient-to-r from-blue-50 to-blue-100 border-blue-200">
+            <CardContent className="p-6">
+              <div className="flex items-center gap-3">
+                <Calendar className="h-8 w-8 text-blue-600" />
+                <div>
+                  <p className="text-sm text-blue-600 font-medium">Today's Appointments</p>
+                  <p className="text-3xl font-bold text-blue-700">{counts.appointments}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-gradient-to-r from-red-50 to-red-100 border-red-200">
+            <CardContent className="p-6">
+              <div className="flex items-center gap-3">
+                <AlertTriangle className="h-8 w-8 text-red-600" />
+                <div>
+                  <p className="text-sm text-red-600 font-medium">Active Emergencies</p>
+                  <p className="text-3xl font-bold text-red-700">{realtimeStats.totalEmergencies}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-gradient-to-r from-green-50 to-green-100 border-green-200">
+            <CardContent className="p-6">
+              <div className="flex items-center gap-3">
+                <Activity className="h-8 w-8 text-green-600" />
+                <div>
+                  <p className="text-sm text-green-600 font-medium">Pending Treatments</p>
+                  <p className="text-3xl font-bold text-green-700">{realtimeStats.pendingTreatments}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-gradient-to-r from-purple-50 to-purple-100 border-purple-200">
+            <CardContent className="p-6">
+              <div className="flex items-center gap-3">
+                <User className="h-8 w-8 text-purple-600" />
+                <div>
+                  <p className="text-sm text-purple-600 font-medium">Total Patients</p>
+                  <p className="text-3xl font-bold text-purple-700">{counts.total}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
         {/* Patients Today Card */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Activity className="h-6 w-6" />
-              Patients Today
+              Patients Today ({counts.total})
             </CardTitle>
           </CardHeader>
           <CardContent>

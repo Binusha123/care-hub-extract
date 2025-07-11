@@ -30,10 +30,10 @@ serve(async (req: Request) => {
 
     console.log('🚨 Processing emergency notification:', { emergencyId, patientName, location, condition, priority });
 
-    // Get all doctor profiles with their emails
+    // Get ALL doctor profiles (not just on-duty ones) - this is the fix!
     const { data: doctorProfiles, error: profilesError } = await supabase
       .from('profiles')
-      .select('user_id, name')
+      .select('user_id, name, department')
       .eq('role', 'doctor');
 
     if (profilesError) {

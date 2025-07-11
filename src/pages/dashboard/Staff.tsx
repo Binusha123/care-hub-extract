@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -50,11 +51,26 @@ interface TreatmentQueue {
   doctor_name?: string;
 }
 
+interface SystemStats {
+  totalDoctors: number;
+  onDutyDoctors: number;
+  totalEmergencies: number;
+  pendingTreatments: number;
+  todayAppointments: number;
+}
+
 const StaffDashboard = () => {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [doctorShifts, setDoctorShifts] = useState<DoctorShift[]>([]);
   const [treatmentQueue, setTreatmentQueue] = useState<TreatmentQueue[]>([]);
+  const [systemStats, setSystemStats] = useState<SystemStats>({
+    totalDoctors: 0,
+    onDutyDoctors: 0,
+    totalEmergencies: 0,
+    pendingTreatments: 0,
+    todayAppointments: 0
+  });
   const [formData, setFormData] = useState({
     patient_id: "",
     patient_name: "",
@@ -98,9 +114,44 @@ const StaffDashboard = () => {
     getUser();
   }, [navigate]);
 
+  const fetchSystemStats = async () => {
+    try {
+      // Fetch system-wide statistics
+      const [doctorsResult, emergenciesResult, treatmentsResult, appointmentsResult] = await Promise.all([
+        supabase.from('profiles').select('user_id').eq('role', 'doctor'),
+        supabase.from('emergencies').select('id').eq('resolved', false),
+        supabase.from('treatment_queue').select('id').neq('status', 'completed'),
+        supabase.from('patients_today').select('id').eq('date', new Date().toISOString().split('T')[0])
+      ]);
+
+      const { data: doctors } = doctorsResult;
+      const { data: emergencies } = emergenciesResult;
+      const { data: treatments } = treatmentsResult;
+      const { data: appointments } = appointmentsResult;
+
+      // Count on-duty doctors
+      const { data: onDutyShifts } = await supabase
+        .from('doctor_shifts')
+        .select('id')
+        .eq('status', 'on-duty');
+
+      setSystemStats({
+        totalDoctors: doctors?.length || 0,
+        onDutyDoctors: onDutyShifts?.length || 0,
+        totalEmergencies: emergencies?.length || 0,
+        pendingTreatments: treatments?.length || 0,
+        todayAppointments: appointments?.length || 0
+      });
+
+    } catch (error) {
+      console.error('Error fetching system stats:', error);
+    }
+  };
+
   useEffect(() => {
     fetchDoctorShifts();
     fetchTreatmentQueue();
+    fetchSystemStats();
 
     // Real-time subscription for doctor shifts
     const shiftSubscription = supabase
@@ -114,6 +165,7 @@ const StaffDashboard = () => {
         },
         () => {
           fetchDoctorShifts();
+          fetchSystemStats();
         }
       )
       .subscribe();
@@ -130,13 +182,37 @@ const StaffDashboard = () => {
         },
         () => {
           fetchTreatmentQueue();
+          fetchSystemStats();
         }
       )
       .subscribe();
 
+    // Real-time subscription for emergencies
+    const emergencySubscription = supabase
+      .channel('staff_emergencies_changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'emergencies'
+        },
+        () => {
+          fetchSystemStats();
+        }
+      )
+      .subscribe();
+
+    // Refresh stats every 30 seconds
+    const interval = setInterval(() => {
+      fetchSystemStats();
+    }, 30000);
+
     return () => {
       shiftSubscription.unsubscribe();
       treatmentSubscription.unsubscribe();
+      emergencySubscription.unsubscribe();
+      clearInterval(interval);
     };
   }, []);
 
@@ -309,7 +385,7 @@ const StaffDashboard = () => {
 
       console.log('Emergency created:', emergency);
 
-      // Send push notifications to all on-duty doctors
+      // Send email notifications to all doctors (not just on-duty ones)
       const { data: notificationResult, error: notificationError } = await supabase.functions.invoke(
         'send-emergency-notifications',
         {
@@ -334,12 +410,12 @@ const StaffDashboard = () => {
         console.log('Notification result:', notificationResult);
         toast({
           title: "Emergency Alert Sent",
-          description: `Emergency alert sent to ${notificationResult.notificationsSent || 0} doctors`,
+          description: `Emergency alert sent to ${notificationResult.notificationsSent || 0} doctors via email`,
         });
       }
 
       // Show local notification to staff
-      showNotification("Emergency Alert Triggered", `Emergency alert sent to all on-duty doctors for patient at ${formData.location}`);
+      showNotification("Emergency Alert Triggered", `Emergency alert sent to all doctors for patient at ${formData.location}`);
 
       // Reset form
       setFormData({
@@ -402,6 +478,69 @@ const StaffDashboard = () => {
           </p>
         </div>
 
+        {/* Real-time System Statistics */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
+          <Card className="bg-gradient-to-r from-blue-50 to-blue-100 border-blue-200">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <Users className="h-6 w-6 text-blue-600" />
+                <div>
+                  <p className="text-xs text-blue-600 font-medium">Total Doctors</p>
+                  <p className="text-2xl font-bold text-blue-700">{systemStats.totalDoctors}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-gradient-to-r from-green-50 to-green-100 border-green-200">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <Activity className="h-6 w-6 text-green-600" />
+                <div>
+                  <p className="text-xs text-green-600 font-medium">Doctors On Duty</p>
+                  <p className="text-2xl font-bold text-green-700">{systemStats.onDutyDoctors}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-gradient-to-r from-red-50 to-red-100 border-red-200">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <AlertTriangle className="h-6 w-6 text-red-600" />
+                <div>
+                  <p className="text-xs text-red-600 font-medium">Active Emergencies</p>
+                  <p className="text-2xl font-bold text-red-700">{systemStats.totalEmergencies}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-gradient-to-r from-purple-50 to-purple-100 border-purple-200">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <Clock className="h-6 w-6 text-purple-600" />
+                <div>
+                  <p className="text-xs text-purple-600 font-medium">Pending Treatments</p>
+                  <p className="text-2xl font-bold text-purple-700">{systemStats.pendingTreatments}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-gradient-to-r from-yellow-50 to-yellow-100 border-yellow-200">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <FileText className="h-6 w-6 text-yellow-600" />
+                <div>
+                  <p className="text-xs text-yellow-600 font-medium">Today's Appointments</p>
+                  <p className="text-2xl font-bold text-yellow-700">{systemStats.todayAppointments}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
         {/* Treatment Coordination Panel */}
         <Card className="mb-8 border-blue-200 dark:border-blue-800">
           <CardHeader>
@@ -440,16 +579,14 @@ const StaffDashboard = () => {
                   onValueChange={(value) => handleAssignmentInputChange('doctor_id', value)}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Select an on-duty doctor" />
+                    <SelectValue placeholder="Select a doctor" />
                   </SelectTrigger>
                   <SelectContent>
-                    {doctorShifts
-                      .filter(shift => shift.status === 'on-duty')
-                      .map((shift) => (
-                        <SelectItem key={shift.doctor_id} value={shift.doctor_id}>
-                          {shift.doctor_name} - {shift.department}
-                        </SelectItem>
-                      ))}
+                    {doctorShifts.map((shift) => (
+                      <SelectItem key={shift.doctor_id} value={shift.doctor_id}>
+                        {shift.doctor_name} - {shift.department} ({shift.status})
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -648,57 +785,6 @@ const StaffDashboard = () => {
             )}
           </CardContent>
         </Card>
-
-        {/* Staff Quick Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center gap-3">
-                <MapPin className="h-8 w-8 text-blue-500" />
-                <div>
-                  <p className="text-sm text-muted-foreground">Current Ward</p>
-                  <p className="text-2xl font-bold">Ward 3</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center gap-3">
-                <FileText className="h-8 w-8 text-green-500" />
-                <div>
-                  <p className="text-sm text-muted-foreground">Shift Status</p>
-                  <p className="text-lg font-semibold">Active</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center gap-3">
-                <Users className="h-8 w-8 text-primary" />
-                <div>
-                  <p className="text-sm text-muted-foreground">Doctors On Duty</p>
-                  <p className="text-2xl font-bold">{doctorShifts.filter(s => s.status === 'on-duty').length}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center gap-3">
-                <Heart className="h-8 w-8 text-red-500" />
-                <div>
-                  <p className="text-sm text-muted-foreground">Priority Patients</p>
-                  <p className="text-2xl font-bold">3</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
       </div>
     </div>
   );
