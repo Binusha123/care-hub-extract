@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 
@@ -16,8 +17,16 @@ export const useNotifications = (userRole?: string) => {
       const result = await Notification.requestPermission();
       setPermission(result);
       
-      if (result === 'granted' && userRole === 'doctor') {
+      if (result === 'granted') {
         await registerServiceWorker();
+        
+        // Show a test notification to confirm it's working
+        showNotification(
+          "Notifications Enabled", 
+          userRole === 'doctor' 
+            ? "You'll now receive emergency alerts and appointment notifications" 
+            : "You'll now receive app notifications"
+        );
       }
       
       return result;
@@ -29,6 +38,7 @@ export const useNotifications = (userRole?: string) => {
     if ('serviceWorker' in navigator && 'PushManager' in window) {
       try {
         const registration = await navigator.serviceWorker.register('/sw.js');
+        console.log('Service Worker registered successfully');
         
         const sub = await registration.pushManager.subscribe({
           userVisibleOnly: true,
@@ -38,17 +48,24 @@ export const useNotifications = (userRole?: string) => {
         });
         
         setSubscription(sub);
+        console.log('Push subscription created:', sub.endpoint);
         
         // Store subscription in Supabase for the current user
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
-          await supabase
+          const { error } = await supabase
             .from('push_subscriptions')
             .upsert({
               user_id: user.id,
               subscription: JSON.stringify(sub),
               endpoint: sub.endpoint
             });
+          
+          if (error) {
+            console.error('Error storing push subscription:', error);
+          } else {
+            console.log('Push subscription stored successfully');
+          }
         }
       } catch (error) {
         console.error('Error registering service worker:', error);
@@ -56,13 +73,25 @@ export const useNotifications = (userRole?: string) => {
     }
   };
 
-  const showNotification = (title: string, body: string) => {
+  const showNotification = (title: string, body: string, options?: NotificationOptions) => {
     if (permission === 'granted') {
-      new Notification(title, {
+      const notification = new Notification(title, {
         body,
         icon: '/favicon.ico',
-        requireInteraction: true
+        requireInteraction: false,
+        ...options
       });
+
+      // Auto-close notification after 5 seconds unless it requires interaction
+      if (!options?.requireInteraction) {
+        setTimeout(() => {
+          notification.close();
+        }, 5000);
+      }
+
+      return notification;
+    } else {
+      console.warn('Notification permission not granted');
     }
   };
 

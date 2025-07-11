@@ -292,7 +292,8 @@ const StaffDashboard = () => {
 
     setLoading(true);
     try {
-      const { error } = await supabase
+      // Create emergency in database
+      const { data: emergency, error } = await supabase
         .from('emergencies')
         .insert({
           patient_id: formData.patient_id,
@@ -300,17 +301,45 @@ const StaffDashboard = () => {
           location: formData.location,
           condition: formData.condition,
           triggered_by: user.id
-        });
+        })
+        .select()
+        .single();
 
       if (error) throw error;
 
-      // Show local notification
-      showNotification("Emergency Alert Triggered", "All doctors have been notified of the emergency.");
+      console.log('Emergency created:', emergency);
 
-      toast({
-        title: "Emergency Alert Sent",
-        description: "All doctors have been notified immediately",
-      });
+      // Send push notifications to all on-duty doctors
+      const { data: notificationResult, error: notificationError } = await supabase.functions.invoke(
+        'send-emergency-notifications',
+        {
+          body: {
+            emergencyId: emergency.id,
+            patientName: formData.patient_name,
+            location: formData.location,
+            condition: formData.condition,
+            priority: 'high'
+          }
+        }
+      );
+
+      if (notificationError) {
+        console.error('Error sending notifications:', notificationError);
+        toast({
+          title: "Emergency Created",
+          description: "Emergency alert created but failed to send notifications to some doctors",
+          variant: "destructive"
+        });
+      } else {
+        console.log('Notification result:', notificationResult);
+        toast({
+          title: "Emergency Alert Sent",
+          description: `Emergency alert sent to ${notificationResult.notificationsSent || 0} doctors`,
+        });
+      }
+
+      // Show local notification to staff
+      showNotification("Emergency Alert Triggered", `Emergency alert sent to all on-duty doctors for patient at ${formData.location}`);
 
       // Reset form
       setFormData({
