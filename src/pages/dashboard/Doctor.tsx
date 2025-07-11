@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+
+import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -45,108 +46,36 @@ const DoctorDashboard = () => {
   const navigate = useNavigate();
   const { requestPermission, permission, showNotification } = useNotifications('doctor');
 
-  useEffect(() => {
-    const getUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        navigate('/login');
-        return;
-      }
-
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('user_id', user.id)
-        .single();
-
-      setUser({
-        ...user,
-        id: user.id,
-        name: profile?.name || user.email,
-        role: profile?.role || 'doctor'
-      });
-
-      // Request notification permission for doctors
-      if (permission === 'default') {
-        setTimeout(() => {
-          requestPermission();
-        }, 2000); // Wait 2 seconds before asking for permission
-      }
-    };
-
-    getUser();
-  }, [navigate, permission, requestPermission]);
-
-  useEffect(() => {
-    if (!user) return;
-    fetchPatientsToday();
-
-    // Real-time subscription for appointments
-    const appointmentChannel = supabase
-      .channel('doctor_appointments_changes')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'patients_today',
-          filter: `doctor_id=eq.${user.id}`
-        },
-        () => {
-          fetchPatientsToday();
-        }
-      )
-      .subscribe();
-
-    // Real-time subscription for emergencies
-    const emergencyChannel = supabase
-      .channel('doctor_emergencies_changes')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'treatment_queue',
-          filter: `doctor_id=eq.${user.id}`
-        },
-        () => {
-          fetchPatientsToday();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      appointmentChannel.unsubscribe();
-      emergencyChannel.unsubscribe();
-    };
-  }, [user]);
-
-  const fetchPatientsToday = async () => {
+  // Memoized fetchPatientsToday function to prevent unnecessary re-renders
+  const fetchPatientsToday = useCallback(async () => {
+    if (!user?.id) return;
+    
     try {
-      setLoading(true);
       const today = format(new Date(), 'yyyy-MM-dd');
 
-      // Fetch today's appointments
-      const { data: appointments, error: appointmentsError } = await supabase
-        .from('patients_today')
-        .select('*')
-        .eq('doctor_id', user.id)
-        .eq('date', today);
+      // Fetch appointments and emergencies in parallel for better performance
+      const [appointmentsResult, emergenciesResult] = await Promise.all([
+        supabase
+          .from('patients_today')
+          .select('*')
+          .eq('doctor_id', user.id)
+          .eq('date', today),
+        supabase
+          .from('treatment_queue')
+          .select('*')
+          .eq('doctor_id', user.id)
+          .gte('assigned_at', `${today}T00:00:00`)
+          .lt('assigned_at', `${today}T23:59:59`)
+          .in('status', ['assigned', 'en-route', 'with-patient'])
+      ]);
+
+      const { data: appointments, error: appointmentsError } = appointmentsResult;
+      const { data: emergencies, error: emergenciesError } = emergenciesResult;
 
       if (appointmentsError) throw appointmentsError;
-
-      // Fetch today's emergencies/treatment queue
-      const { data: emergencies, error: emergenciesError } = await supabase
-        .from('treatment_queue')
-        .select('*')
-        .eq('doctor_id', user.id)
-        .gte('assigned_at', `${today}T00:00:00`)
-        .lt('assigned_at', `${today}T23:59:59`)
-        .in('status', ['assigned', 'en-route', 'with-patient']);
-
       if (emergenciesError) throw emergenciesError;
 
-      // Transform appointments data
+      // Transform data efficiently
       const appointmentPatients: PatientToday[] = appointments?.map(apt => ({
         id: apt.id,
         patient_name: apt.patient_name,
@@ -158,7 +87,6 @@ const DoctorDashboard = () => {
         department_name: 'General'
       })) || [];
 
-      // Transform emergencies data
       const emergencyPatients: PatientToday[] = emergencies?.map(emergency => ({
         id: emergency.id,
         patient_name: emergency.patient_name,
@@ -171,7 +99,6 @@ const DoctorDashboard = () => {
         priority: emergency.priority
       })) || [];
 
-      // Combine and sort by time
       const allPatients = [...appointmentPatients, ...emergencyPatients]
         .sort((a, b) => a.appointment_time.localeCompare(b.appointment_time));
 
@@ -192,7 +119,104 @@ const DoctorDashboard = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [user?.id, toast]);
+
+  useEffect(() => {
+    const getUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        navigate('/login');
+        return;
+      }
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('user_id', user.id)
+        .single();
+
+      setUser({
+        ...user,
+        id: user.id,
+        name: profile?.name || user.email,
+        role: profile?.role || 'doctor'
+      });
+    };
+
+    getUser();
+  }, [navigate]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    
+    fetchPatientsToday();
+
+    // Optimized real-time subscriptions with single channel
+    const channel = supabase
+      .channel(`doctor_updates_${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'patients_today',
+          filter: `doctor_id=eq.${user.id}`
+        },
+        () => fetchPatientsToday()
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'treatment_queue',
+          filter: `doctor_id=eq.${user.id}`
+        },
+        () => fetchPatientsToday()
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'emergencies'
+        },
+        (payload) => {
+          // Show immediate notification for new emergencies
+          if (permission === 'granted') {
+            showNotification(
+              "🚨 NEW EMERGENCY ALERT",
+              `Emergency at ${payload.new.location}: ${payload.new.condition}`,
+              {
+                requireInteraction: true,
+                tag: `emergency-${payload.new.id}`,
+                vibrate: [200, 100, 200, 100, 200],
+                actions: [
+                  { action: 'respond', title: 'Respond Now' },
+                  { action: 'dismiss', title: 'Dismiss' }
+                ]
+              }
+            );
+          }
+          fetchPatientsToday();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id, fetchPatientsToday, permission, showNotification]);
+
+  // Auto-request notification permission for doctors
+  useEffect(() => {
+    if (user?.role === 'doctor' && permission === 'default') {
+      const timer = setTimeout(() => {
+        requestPermission();
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [user?.role, permission, requestPermission]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -211,7 +235,6 @@ const DoctorDashboard = () => {
       if (priority === 'low') return <Badge variant="secondary">Low Priority</Badge>;
       return <Badge variant="outline">Emergency</Badge>;
     }
-
     return <Badge variant="default">Scheduled</Badge>;
   };
 
@@ -223,7 +246,14 @@ const DoctorDashboard = () => {
     );
   };
 
-  if (!user) return <div>Loading...</div>;
+  if (!user) return (
+    <div className="min-h-screen flex items-center justify-center">
+      <div className="text-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+        <p>Loading...</p>
+      </div>
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-background">
@@ -243,7 +273,7 @@ const DoctorDashboard = () => {
                 className="text-sm"
               >
                 <Bell className="h-4 w-4 mr-2" />
-                Enable Notifications
+                Enable Mobile Notifications
               </Button>
             )}
             <div className="flex items-center gap-2">
@@ -259,15 +289,28 @@ const DoctorDashboard = () => {
         </div>
       </header>
 
-      {/* Notification Permission Alert */}
+      {/* Critical Notification Permission Alert */}
       {permission === 'denied' && (
-        <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-4">
+        <div className="bg-red-50 border-l-4 border-red-400 p-4 mb-4">
           <div className="flex">
-            <AlertTriangle className="h-5 w-5 text-yellow-400 mr-2" />
+            <AlertTriangle className="h-5 w-5 text-red-400 mr-2" />
             <div>
-              <p className="text-sm text-yellow-700">
-                <strong>Notifications Blocked:</strong> You won't receive emergency alerts. 
-                Please enable notifications in your browser settings to receive critical emergency notifications.
+              <p className="text-sm text-red-700">
+                <strong>🚨 CRITICAL: Mobile Notifications Blocked!</strong> You will NOT receive emergency alerts on your mobile device. 
+                Please enable notifications in your browser settings immediately to receive life-critical emergency notifications.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {permission === 'granted' && (
+        <div className="bg-green-50 border-l-4 border-green-400 p-4 mb-4">
+          <div className="flex">
+            <Bell className="h-5 w-5 text-green-400 mr-2" />
+            <div>
+              <p className="text-sm text-green-700">
+                <strong>✅ Mobile Notifications Enabled:</strong> You will receive emergency alerts directly on your mobile device.
               </p>
             </div>
           </div>
@@ -309,7 +352,10 @@ const DoctorDashboard = () => {
 
             {/* Patient List */}
             {loading ? (
-              <div className="text-center py-4">Loading patients...</div>
+              <div className="text-center py-4">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-2"></div>
+                <p>Loading patients...</p>
+              </div>
             ) : patients.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
                 <Calendar className="h-12 w-12 mx-auto mb-4 opacity-50" />
