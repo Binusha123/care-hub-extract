@@ -9,7 +9,6 @@ import {
   User,
   LogOut,
   Activity,
-  Bell,
   Calendar,
   Clock
 } from "lucide-react";
@@ -17,7 +16,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
 import { format } from 'date-fns';
-import { useNotifications } from "@/hooks/useNotifications";
 
 interface PatientToday {
   id: string;
@@ -44,7 +42,6 @@ const DoctorDashboard = () => {
   });
   const { toast } = useToast();
   const navigate = useNavigate();
-  const { requestPermission, permission, showNotification } = useNotifications('doctor');
 
   // Memoized fetchPatientsToday function to prevent unnecessary re-renders
   const fetchPatientsToday = useCallback(async () => {
@@ -139,7 +136,8 @@ const DoctorDashboard = () => {
         ...user,
         id: user.id,
         name: profile?.name || user.email,
-        role: profile?.role || 'doctor'
+        role: profile?.role || 'doctor',
+        email: user.email
       });
     };
 
@@ -151,7 +149,7 @@ const DoctorDashboard = () => {
     
     fetchPatientsToday();
 
-    // Optimized real-time subscriptions with single channel
+    // Real-time subscriptions for emergency updates
     const channel = supabase
       .channel(`doctor_updates_${user.id}`)
       .on(
@@ -182,26 +180,26 @@ const DoctorDashboard = () => {
           table: 'emergencies'
         },
         (payload) => {
-          // Show immediate notification for new emergencies
-          if (permission === 'granted') {
+          // Show browser notification for new emergencies
+          if ('Notification' in window && Notification.permission === 'granted') {
             // Handle vibration separately
             if ('vibrate' in navigator && navigator.vibrate) {
               navigator.vibrate([200, 100, 200, 100, 200]);
             }
             
-            showNotification(
-              "🚨 NEW EMERGENCY ALERT",
-              `Emergency at ${payload.new.location}: ${payload.new.condition}`,
-              {
-                requireInteraction: true,
-                tag: `emergency-${payload.new.id}`,
-                actions: [
-                  { action: 'respond', title: 'Respond Now' },
-                  { action: 'dismiss', title: 'Dismiss' }
-                ]
-              }
-            );
+            new Notification("🚨 NEW EMERGENCY ALERT", {
+              body: `Emergency at ${payload.new.location}: ${payload.new.condition}`,
+              icon: '/favicon.ico',
+              requireInteraction: true
+            });
           }
+          
+          toast({
+            title: "🚨 NEW EMERGENCY ALERT",
+            description: `Emergency at ${payload.new.location}: ${payload.new.condition}`,
+            variant: "destructive"
+          });
+          
           fetchPatientsToday();
         }
       )
@@ -210,17 +208,7 @@ const DoctorDashboard = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user?.id, fetchPatientsToday, permission, showNotification]);
-
-  // Auto-request notification permission for doctors
-  useEffect(() => {
-    if (user?.role === 'doctor' && permission === 'default') {
-      const timer = setTimeout(() => {
-        requestPermission();
-      }, 1000);
-      return () => clearTimeout(timer);
-    }
-  }, [user?.role, permission, requestPermission]);
+  }, [user?.id, fetchPatientsToday, toast]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -269,17 +257,6 @@ const DoctorDashboard = () => {
             <h1 className="text-2xl font-bold text-primary">MediAid</h1>
           </div>
           <div className="flex items-center gap-4">
-            {permission !== 'granted' && (
-              <Button 
-                variant="outline" 
-                size="sm"
-                onClick={requestPermission}
-                className="text-sm"
-              >
-                <Bell className="h-4 w-4 mr-2" />
-                Enable Mobile Notifications
-              </Button>
-            )}
             <div className="flex items-center gap-2">
               <User className="h-5 w-5" />
               <span className="font-medium">{user.name}</span>
@@ -293,33 +270,18 @@ const DoctorDashboard = () => {
         </div>
       </header>
 
-      {/* Critical Notification Permission Alert */}
-      {permission === 'denied' && (
-        <div className="bg-red-50 border-l-4 border-red-400 p-4 mb-4">
-          <div className="flex">
-            <AlertTriangle className="h-5 w-5 text-red-400 mr-2" />
-            <div>
-              <p className="text-sm text-red-700">
-                <strong>🚨 CRITICAL: Mobile Notifications Blocked!</strong> You will NOT receive emergency alerts on your mobile device. 
-                Please enable notifications in your browser settings immediately to receive life-critical emergency notifications.
-              </p>
-            </div>
+      {/* Info Alert */}
+      <div className="bg-blue-50 border-l-4 border-blue-400 p-4 mb-4">
+        <div className="flex">
+          <AlertTriangle className="h-5 w-5 text-blue-400 mr-2" />
+          <div>
+            <p className="text-sm text-blue-700">
+              <strong>📧 Email Notifications Active:</strong> You will receive emergency alerts via email at {user.email}. 
+              Emergency notifications are now sent directly to your registered email address for immediate attention.
+            </p>
           </div>
         </div>
-      )}
-
-      {permission === 'granted' && (
-        <div className="bg-green-50 border-l-4 border-green-400 p-4 mb-4">
-          <div className="flex">
-            <Bell className="h-5 w-5 text-green-400 mr-2" />
-            <div>
-              <p className="text-sm text-green-700">
-                <strong>✅ Mobile Notifications Enabled:</strong> You will receive emergency alerts directly on your mobile device.
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
+      </div>
 
       <div className="container mx-auto px-4 py-8">
         <div className="mb-8">

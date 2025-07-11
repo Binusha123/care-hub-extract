@@ -2,6 +2,16 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 
+// Create a simplified notification options interface
+interface SimpleNotificationOptions {
+  body: string;
+  icon?: string;
+  badge?: string;
+  requireInteraction?: boolean;
+  tag?: string;
+  silent?: boolean;
+}
+
 export const useNotifications = (userRole?: string) => {
   const [permission, setPermission] = useState<NotificationPermission>('default');
   const [subscription, setSubscription] = useState<PushSubscription | null>(null);
@@ -19,11 +29,6 @@ export const useNotifications = (userRole?: string) => {
       return 'denied';
     }
 
-    if (!('serviceWorker' in navigator)) {
-      console.warn('This browser does not support service workers');
-      return 'denied';
-    }
-
     try {
       setIsRegistering(true);
       
@@ -34,19 +39,12 @@ export const useNotifications = (userRole?: string) => {
       if (result === 'granted') {
         console.log('Notification permission granted');
         
-        // Register service worker and setup push subscription
-        await registerServiceWorker();
-        
         // Show confirmation notification
         showNotification(
-          "🔔 Mobile Notifications Enabled", 
+          "🔔 Browser Notifications Enabled", 
           userRole === 'doctor' 
-            ? "You'll now receive emergency alerts directly on your mobile device" 
-            : "You'll now receive app notifications on your mobile device",
-          {
-            requireInteraction: false,
-            tag: 'notification-enabled'
-          }
+            ? "You'll now receive emergency alerts in your browser" 
+            : "You'll now receive app notifications in your browser"
         );
       } else {
         console.warn('Notification permission denied');
@@ -61,84 +59,7 @@ export const useNotifications = (userRole?: string) => {
     }
   };
 
-  const registerServiceWorker = async () => {
-    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-      console.warn('Push messaging is not supported');
-      return;
-    }
-
-    try {
-      console.log('Registering service worker...');
-      
-      // Register service worker
-      const registration = await navigator.serviceWorker.register('/sw.js', {
-        scope: '/'
-      });
-      
-      console.log('Service Worker registered successfully');
-      
-      // Wait for service worker to be ready
-      await navigator.serviceWorker.ready;
-      
-      // Check if push manager is available
-      if (!registration.pushManager) {
-        console.warn('Push manager unavailable');
-        return;
-      }
-
-      // Get existing subscription or create new one
-      let pushSubscription = await registration.pushManager.getSubscription();
-      
-      if (!pushSubscription) {
-        console.log('Creating new push subscription...');
-        
-        pushSubscription = await registration.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(
-            'BKJX3HYuWQR5K5M5M4-sj5YGZ9RKE5Y4P5M5M5M5M5M5M5M5M5M5M5M5M5M5M5M5M5M5M5M5M5M5M5M5M5M5M5M5M5M5M5M5M5'
-          )
-        });
-        
-        console.log('Push subscription created');
-      }
-      
-      setSubscription(pushSubscription);
-      
-      // Store subscription in Supabase
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user && pushSubscription) {
-        console.log('Storing push subscription in database...');
-        
-        const { error } = await supabase
-          .from('push_subscriptions')
-          .upsert({
-            user_id: user.id,
-            subscription: JSON.stringify(pushSubscription.toJSON()),
-            endpoint: pushSubscription.endpoint
-          });
-        
-        if (error) {
-          console.error('Error storing push subscription:', error);
-        } else {
-          console.log('Push subscription stored successfully');
-        }
-      }
-
-      // Test notification capability
-      if (userRole === 'doctor') {
-        setTimeout(() => {
-          registration.active?.postMessage({
-            type: 'TEST_NOTIFICATION'
-          });
-        }, 2000);
-      }
-      
-    } catch (error) {
-      console.error('Error registering service worker:', error);
-    }
-  };
-
-  const showNotification = (title: string, body: string, options?: NotificationOptions) => {
+  const showNotification = (title: string, body: string, options?: SimpleNotificationOptions) => {
     if (!('Notification' in window)) {
       console.warn('Notifications not supported');
       return;
@@ -150,13 +71,12 @@ export const useNotifications = (userRole?: string) => {
     }
 
     try {
-      const notificationOptions: NotificationOptions = {
+      const notificationOptions: SimpleNotificationOptions = {
         body,
         icon: '/favicon.ico',
         badge: '/favicon.ico',
         requireInteraction: false,
         tag: `notification-${Date.now()}`,
-        timestamp: Date.now(),
         silent: false,
         ...options
       };
@@ -203,14 +123,10 @@ export const useNotifications = (userRole?: string) => {
       
       showNotification(
         "🧪 Test Emergency Alert",
-        "This is a test emergency notification to verify mobile alerts are working properly.",
+        "This is a test emergency notification to verify browser alerts are working properly.",
         {
           requireInteraction: true,
-          tag: 'test-emergency',
-          actions: [
-            { action: 'respond', title: 'Respond' },
-            { action: 'dismiss', title: 'Dismiss' }
-          ]
+          tag: 'test-emergency'
         }
       );
     }
@@ -222,22 +138,6 @@ export const useNotifications = (userRole?: string) => {
     isRegistering,
     requestPermission,
     showNotification,
-    registerServiceWorker,
     testNotification
   };
 };
-
-function urlBase64ToUint8Array(base64String: string) {
-  const padding = '='.repeat((4 - base64String.length % 4) % 4);
-  const base64 = (base64String + padding)
-    .replace(/-/g, '+')
-    .replace(/_/g, '/');
-
-  const rawData = window.atob(base64);
-  const outputArray = new Uint8Array(rawData.length);
-
-  for (let i = 0; i < rawData.length; ++i) {
-    outputArray[i] = rawData.charCodeAt(i);
-  }
-  return outputArray;
-}

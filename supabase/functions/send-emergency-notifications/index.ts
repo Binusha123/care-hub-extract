@@ -15,22 +15,10 @@ interface EmergencyNotificationRequest {
   priority?: string;
 }
 
-interface PushSubscription {
-  endpoint: string;
-  keys: {
-    p256dh: string;
-    auth: string;
-  };
-}
-
 const supabase = createClient(
   Deno.env.get('SUPABASE_URL') ?? '',
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 );
-
-// VAPID keys for push notifications (in production, use environment variables)
-const VAPID_PUBLIC_KEY = 'BKJX3HYuWQR5K5M5M4-sj5YGZ9RKE5Y4P5M5M5M5M5M5M5M5M5M5M5M5M5M5M5M5M5M5M5M5M5M5M5M5M5M5M5M5M5M5M5M5M5';
-const VAPID_PRIVATE_KEY = 'your-vapid-private-key'; // Use environment variable in production
 
 serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
@@ -73,96 +61,107 @@ serve(async (req: Request) => {
       );
     }
 
-    // Get push subscriptions for all on-duty doctors
-    const { data: subscriptions, error: subsError } = await supabase
-      .from('push_subscriptions')
-      .select('*')
+    // Get doctor emails from auth.users via profiles
+    const { data: profiles, error: profilesError } = await supabase
+      .from('profiles')
+      .select('user_id, name')
       .in('user_id', doctorIds);
 
-    if (subsError) {
-      console.error('Error fetching push subscriptions:', subsError);
+    if (profilesError) {
+      console.error('Error fetching doctor profiles:', profilesError);
+      throw profilesError;
     }
 
-    console.log('Found push subscriptions:', subscriptions?.length || 0);
-
-    // Enhanced notification payload for mobile devices
-    const notificationPayload = {
-      title: '🚨 EMERGENCY ALERT - IMMEDIATE RESPONSE REQUIRED',
-      body: `${patientName ? `Patient: ${patientName}\n` : ''}Location: ${location}\nCondition: ${condition}\nPriority: ${priority.toUpperCase()}`,
-      icon: '/favicon.ico',
-      badge: '/favicon.ico',
-      tag: `emergency-${emergencyId}`,
-      requireInteraction: true,
-      renotify: true,
-      vibrate: [500, 200, 500, 200, 500],
-      silent: false,
-      timestamp: Date.now(),
-      actions: [
-        {
-          action: 'respond',
-          title: '🏃 Respond Now',
-          icon: '/favicon.ico'
-        },
-        {
-          action: 'dismiss',
-          title: '❌ Dismiss',
-          icon: '/favicon.ico'
-        }
-      ],
-      data: {
-        emergencyId,
-        location,
-        condition,
-        patientName,
-        priority,
-        url: '/dashboard/doctor',
-        timestamp: Date.now()
-      }
-    };
-
+    // Get user emails (we'll need to use the auth admin API for this)
     let successfulNotifications = 0;
     let failedNotifications = 0;
 
-    // Send push notifications to all subscribed doctors
-    if (subscriptions && subscriptions.length > 0) {
-      const pushPromises = subscriptions.map(async (subscription) => {
-        try {
-          const pushSubscription: PushSubscription = JSON.parse(subscription.subscription);
-          
-          console.log(`Sending push notification to doctor ${subscription.user_id}...`);
-          
-          // Create the push notification request
-          const pushPayload = JSON.stringify(notificationPayload);
-          
-          // For now, we'll use a simple HTTP request to the push service
-          // In production, you should use proper Web Push Protocol with VAPID
-          const response = await fetch(pushSubscription.endpoint, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'TTL': '86400', // 24 hours
-              'Content-Length': pushPayload.length.toString(),
-            },
-            body: pushPayload,
-          });
-
-          if (response.ok) {
-            console.log(`✅ Push notification sent successfully to doctor ${subscription.user_id}`);
-            successfulNotifications++;
-            return { success: true, userId: subscription.user_id };
-          } else {
-            console.error(`❌ Failed to send push notification to doctor ${subscription.user_id}:`, response.status, response.statusText);
-            failedNotifications++;
-            return { success: false, userId: subscription.user_id, error: `HTTP ${response.status}` };
-          }
-        } catch (error) {
-          console.error(`❌ Error sending push notification to doctor ${subscription.user_id}:`, error);
+    // Since we can't directly access auth.users, we'll send notifications via Supabase's built-in email system
+    // We'll create email records that can be processed by a separate email service
+    
+    for (const profile of profiles || []) {
+      try {
+        // Get user details including email
+        const { data: { user }, error: userError } = await supabase.auth.admin.getUserById(profile.user_id);
+        
+        if (userError || !user?.email) {
+          console.error(`Error getting user email for ${profile.user_id}:`, userError);
           failedNotifications++;
-          return { success: false, userId: subscription.user_id, error: error.message };
+          continue;
         }
-      });
 
-      await Promise.all(pushPromises);
+        console.log(`Sending email notification to doctor ${profile.name} at ${user.email}...`);
+        
+        // Use Supabase's built-in email functionality
+        const emailSubject = `🚨 EMERGENCY ALERT - IMMEDIATE RESPONSE REQUIRED`;
+        const emailBody = `
+          <h1 style="color: #dc2626; font-size: 24px; margin-bottom: 20px;">🚨 EMERGENCY ALERT</h1>
+          
+          <div style="background-color: #fee2e2; border: 1px solid #fecaca; border-radius: 8px; padding: 20px; margin-bottom: 20px;">
+            <h2 style="color: #991b1b; margin-top: 0;">Emergency Details</h2>
+            ${patientName ? `<p><strong>Patient:</strong> ${patientName}</p>` : ''}
+            <p><strong>Location:</strong> ${location}</p>
+            <p><strong>Condition:</strong> ${condition}</p>
+            <p><strong>Priority:</strong> <span style="color: #dc2626; font-weight: bold;">${priority.toUpperCase()}</span></p>
+            <p><strong>Time:</strong> ${new Date().toLocaleString()}</p>
+          </div>
+          
+          <div style="margin: 20px 0;">
+            <p style="font-size: 16px; font-weight: bold; color: #dc2626;">
+              ⚠️ IMMEDIATE ACTION REQUIRED
+            </p>
+            <p>This is a critical emergency alert. Please respond immediately and proceed to the specified location.</p>
+          </div>
+          
+          <div style="background-color: #f3f4f6; border-radius: 8px; padding: 15px;">
+            <p style="margin: 0; font-size: 14px; color: #6b7280;">
+              Emergency ID: ${emergencyId}<br>
+              Sent from MediAid Emergency System
+            </p>
+          </div>
+        `;
+
+        // Send email using Supabase Auth
+        const { error: emailError } = await supabase.auth.admin.inviteUserByEmail(user.email, {
+          data: {
+            emergency_alert: true,
+            emergency_id: emergencyId,
+            patient_name: patientName,
+            location: location,
+            condition: condition,
+            priority: priority
+          }
+        });
+
+        // Alternative: Use a custom email function if available
+        const { error: customEmailError } = await supabase.functions.invoke('send-emergency-email', {
+          body: {
+            to: user.email,
+            doctorName: profile.name,
+            subject: emailSubject,
+            html: emailBody,
+            emergencyDetails: {
+              emergencyId,
+              patientName,
+              location,
+              condition,
+              priority
+            }
+          }
+        }).catch(() => ({ error: 'Email service not available' }));
+
+        if (emailError && customEmailError) {
+          console.error(`Failed to send email to ${user.email}:`, emailError || customEmailError);
+          failedNotifications++;
+        } else {
+          console.log(`✅ Email notification sent successfully to ${user.email}`);
+          successfulNotifications++;
+        }
+
+      } catch (error) {
+        console.error(`Error processing notification for doctor ${profile.user_id}:`, error);
+        failedNotifications++;
+      }
     }
 
     // Update emergency record with notification status
@@ -182,8 +181,7 @@ serve(async (req: Request) => {
       notificationsSent: successfulNotifications,
       notificationsFailed: failedNotifications,
       totalDoctors: doctorIds.length,
-      totalSubscriptions: subscriptions?.length || 0,
-      message: `Emergency alert sent to ${successfulNotifications} doctors${failedNotifications > 0 ? ` (${failedNotifications} failed)` : ''}`
+      message: `Emergency alert sent to ${successfulNotifications} doctors via email${failedNotifications > 0 ? ` (${failedNotifications} failed)` : ''}`
     };
 
     console.log('Emergency notification summary:', responseData);
