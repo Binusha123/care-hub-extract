@@ -14,7 +14,8 @@ import {
   FileText,
   Activity,
   Clock,
-  Users
+  Users,
+  UserPlus
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -77,6 +78,12 @@ const StaffDashboard = () => {
     department: "",
     priority: "medium" as 'high' | 'medium' | 'low',
     room_number: ""
+  });
+  const [createDoctorForm, setCreateDoctorForm] = useState({
+    email: "",
+    password: "",
+    name: "",
+    department: ""
   });
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -241,6 +248,67 @@ const StaffDashboard = () => {
     setAssignmentForm(prev => ({ ...prev, [field]: value }));
   };
 
+  const handleCreateDoctor = async () => {
+    if (!createDoctorForm.email || !createDoctorForm.password || !createDoctorForm.name) {
+      toast({
+        title: "Missing Information",
+        description: "Please fill in email, password, and name",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setLoading(true);
+    try {
+      // Create the user account
+      const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+        email: createDoctorForm.email,
+        password: createDoctorForm.password,
+        email_confirm: true
+      });
+
+      if (authError) throw authError;
+
+      // Create the doctor profile
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .insert({
+          user_id: authData.user.id,
+          name: createDoctorForm.name,
+          role: 'doctor',
+          department: createDoctorForm.department || 'General'
+        });
+
+      if (profileError) throw profileError;
+
+      toast({
+        title: "Doctor Created",
+        description: `Dr. ${createDoctorForm.name} has been created successfully`,
+      });
+
+      setCreateDoctorForm({
+        email: "",
+        password: "",
+        name: "",
+        department: ""
+      });
+
+      // Refresh data
+      fetchDoctorProfiles();
+      fetchSystemStats();
+
+    } catch (error) {
+      console.error('Error creating doctor:', error);
+      toast({
+        title: "Error",
+        description: `Failed to create doctor: ${error.message}`,
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleAssignDoctor = async () => {
     if (!assignmentForm.patient_id || !assignmentForm.patient_name || !assignmentForm.doctor_id || !assignmentForm.room_number) {
       toast({
@@ -302,6 +370,15 @@ const StaffDashboard = () => {
       return;
     }
 
+    if (doctorProfiles.length === 0) {
+      toast({
+        title: "No Doctors Available",
+        description: "Please create doctor profiles first before sending emergency alerts",
+        variant: "destructive"
+      });
+      return;
+    }
+
     setLoading(true);
     try {
       const { data: emergency, error } = await supabase
@@ -337,19 +414,28 @@ const StaffDashboard = () => {
         console.error('❌ Error sending notifications:', notificationError);
         toast({
           title: "Emergency Created",
-          description: "Emergency alert created but failed to send notifications",
+          description: "Emergency alert created but failed to send notifications. Check if RESEND_API_KEY is configured.",
           variant: "destructive"
         });
       } else {
         console.log('✅ Notification result:', notificationResult);
         const emailsSent = notificationResult.doctorEmailsSent || [];
-        toast({
-          title: "Emergency Alert Sent",
-          description: `Emergency alert sent to ${notificationResult.notificationsSent || 0} users via email${emailsSent.length > 0 ? `. Emails sent to: ${emailsSent.slice(0, 3).join(', ')}${emailsSent.length > 3 ? '...' : ''}` : ''}`,
-        });
+        
+        if (notificationResult.notificationsSent > 0) {
+          toast({
+            title: "Emergency Alert Sent",
+            description: `Emergency alert sent to ${notificationResult.notificationsSent} doctors via email. Emails sent to: ${emailsSent.slice(0, 3).join(', ')}${emailsSent.length > 3 ? '...' : ''}`,
+          });
+        } else {
+          toast({
+            title: "Emergency Alert Failed",
+            description: notificationResult.message || "No emails were sent. Check if RESEND_API_KEY is configured and doctors exist.",
+            variant: "destructive"
+          });
+        }
       }
 
-      showNotification("Emergency Alert Triggered", `Emergency alert sent to all registered users for patient at ${formData.location}`);
+      showNotification("Emergency Alert Triggered", `Emergency alert sent for patient at ${formData.location}`);
 
       setFormData({
         patient_id: "",
@@ -473,6 +559,76 @@ const StaffDashboard = () => {
             </CardContent>
           </Card>
         </div>
+
+        {doctorProfiles.length === 0 && (
+          <Card className="mb-8 border-green-200 dark:border-green-800">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-green-600 dark:text-green-400">
+                <UserPlus className="h-6 w-6" />
+                Create Doctor Profile (Required for Emergency Alerts)
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="bg-yellow-50 dark:bg-yellow-900/20 p-4 rounded-lg border border-yellow-200 dark:border-yellow-800">
+                <p className="text-yellow-800 dark:text-yellow-200 text-sm">
+                  ⚠️ No doctor profiles found. You need to create at least one doctor profile to send emergency alerts.
+                </p>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="doctor_email">Doctor Email *</Label>
+                  <Input
+                    id="doctor_email"
+                    type="email"
+                    placeholder="doctor@example.com"
+                    value={createDoctorForm.email}
+                    onChange={(e) => setCreateDoctorForm(prev => ({ ...prev, email: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="doctor_password">Password *</Label>
+                  <Input
+                    id="doctor_password"
+                    type="password"
+                    placeholder="Enter password"
+                    value={createDoctorForm.password}
+                    onChange={(e) => setCreateDoctorForm(prev => ({ ...prev, password: e.target.value }))}
+                  />
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="doctor_name">Doctor Name *</Label>
+                  <Input
+                    id="doctor_name"
+                    placeholder="Dr. John Smith"
+                    value={createDoctorForm.name}
+                    onChange={(e) => setCreateDoctorForm(prev => ({ ...prev, name: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="doctor_department">Department</Label>
+                  <Input
+                    id="doctor_department"
+                    placeholder="e.g., Emergency, Cardiology"
+                    value={createDoctorForm.department}
+                    onChange={(e) => setCreateDoctorForm(prev => ({ ...prev, department: e.target.value }))}
+                  />
+                </div>
+              </div>
+
+              <Button 
+                onClick={handleCreateDoctor}
+                disabled={loading}
+                className="w-full bg-green-600 hover:bg-green-700 text-white"
+              >
+                {loading ? "Creating Doctor..." : "Create Doctor Profile"}
+              </Button>
+            </CardContent>
+          </Card>
+        )}
 
         <Card className="mb-8 border-blue-200 dark:border-blue-800">
           <CardHeader>
