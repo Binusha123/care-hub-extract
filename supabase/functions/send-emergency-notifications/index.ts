@@ -91,10 +91,19 @@ serve(async (req: Request) => {
     }
 
     console.log(`📧 Total users found: ${users?.length || 0}`);
+    console.log('📧 All users:', users?.map(u => ({ id: u.id, email: u.email })));
 
     // Get the doctor user IDs
     const doctorUserIds = doctorProfiles.map(profile => profile.user_id);
     console.log('🔍 Looking for doctor user IDs:', doctorUserIds);
+
+    // Debug: Check if any user IDs match
+    const userIdMatches = users?.map(user => ({
+      userId: user.id,
+      email: user.email,
+      isInDoctorProfiles: doctorUserIds.includes(user.id)
+    }));
+    console.log('🔍 User ID matches:', userIdMatches);
 
     // Filter users to get only doctors and ensure they have emails
     const doctorUsers = users?.filter(user => {
@@ -108,6 +117,11 @@ serve(async (req: Request) => {
 
     if (doctorUsers.length === 0) {
       console.log('⚠️ No doctor users found with email addresses');
+      console.log('🔍 Debug info:');
+      console.log('- Doctor profiles:', doctorProfiles);
+      console.log('- All users:', users?.map(u => ({ id: u.id, email: u.email })));
+      console.log('- Doctor user IDs:', doctorUserIds);
+      
       return new Response(
         JSON.stringify({ 
           success: true, 
@@ -115,6 +129,12 @@ serve(async (req: Request) => {
           notificationsSent: 0,
           doctorEmailsSent: [],
           totalDoctors: doctorProfiles.length,
+          totalUsers: users?.length || 0,
+          debugInfo: {
+            doctorProfiles: doctorProfiles,
+            allUsers: users?.map(u => ({ id: u.id, email: u.email })),
+            doctorUserIds: doctorUserIds
+          },
           suggestion: 'Make sure doctor profiles are linked to actual user accounts with valid email addresses'
         }),
         { 
