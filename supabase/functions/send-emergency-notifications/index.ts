@@ -62,7 +62,7 @@ serve(async (req: Request) => {
       throw doctorError;
     }
 
-    console.log(`👨‍⚕️ Found ${doctorProfiles?.length || 0} doctor profiles`);
+    console.log(`👨‍⚕️ Found ${doctorProfiles?.length || 0} doctor profiles:`, doctorProfiles);
 
     if (!doctorProfiles || doctorProfiles.length === 0) {
       console.log('⚠️ No doctor profiles found');
@@ -82,8 +82,7 @@ serve(async (req: Request) => {
       );
     }
 
-    // Get user emails for all doctors
-    const doctorUserIds = doctorProfiles.map(profile => profile.user_id);
+    // Get user emails for all doctors using admin.listUsers()
     const { data: { users }, error: usersError } = await supabase.auth.admin.listUsers();
 
     if (usersError) {
@@ -91,9 +90,21 @@ serve(async (req: Request) => {
       throw usersError;
     }
 
-    // Filter users to get only doctors
-    const doctorUsers = users?.filter(user => doctorUserIds.includes(user.id)) || [];
-    console.log(`📧 Found ${doctorUsers.length} doctor users with emails`);
+    console.log(`📧 Total users found: ${users?.length || 0}`);
+
+    // Get the doctor user IDs
+    const doctorUserIds = doctorProfiles.map(profile => profile.user_id);
+    console.log('🔍 Looking for doctor user IDs:', doctorUserIds);
+
+    // Filter users to get only doctors and ensure they have emails
+    const doctorUsers = users?.filter(user => {
+      const isDoctor = doctorUserIds.includes(user.id);
+      const hasEmail = user.email && user.email.trim() !== '';
+      console.log(`👤 User ${user.id} (${user.email}): isDoctor=${isDoctor}, hasEmail=${hasEmail}`);
+      return isDoctor && hasEmail;
+    }) || [];
+
+    console.log(`📧 Found ${doctorUsers.length} doctor users with emails:`, doctorUsers.map(u => ({ id: u.id, email: u.email })));
 
     if (doctorUsers.length === 0) {
       console.log('⚠️ No doctor users found with email addresses');
@@ -104,7 +115,7 @@ serve(async (req: Request) => {
           notificationsSent: 0,
           doctorEmailsSent: [],
           totalDoctors: doctorProfiles.length,
-          suggestion: 'Make sure doctor profiles are linked to actual user accounts'
+          suggestion: 'Make sure doctor profiles are linked to actual user accounts with valid email addresses'
         }),
         { 
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -120,11 +131,7 @@ serve(async (req: Request) => {
     // Send emails to each doctor
     for (const user of doctorUsers) {
       try {
-        if (!user.email) {
-          console.log(`⚠️ User ${user.id} has no email address`);
-          failedNotifications++;
-          continue;
-        }
+        console.log(`📧 Attempting to send email to ${user.email}...`);
 
         // Find the doctor profile for this user
         const doctorProfile = doctorProfiles.find(profile => profile.user_id === user.id);
@@ -181,7 +188,7 @@ serve(async (req: Request) => {
           failedNotifications++;
         } else {
           console.log(`✅ Email notification sent successfully to Dr. ${doctorName} at ${user.email}`);
-          console.log('Email response:', emailResponse);
+          console.log('✅ Email response:', emailResponse);
           successfulNotifications++;
           doctorEmailsSent.push(user.email);
         }
