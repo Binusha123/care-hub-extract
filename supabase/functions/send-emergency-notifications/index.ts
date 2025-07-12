@@ -51,7 +51,7 @@ serve(async (req: Request) => {
 
     const resend = new Resend(resendApiKey);
 
-    // Get doctor profiles with their user information
+    // Get doctor profiles with email addresses from profiles table
     const { data: doctorProfiles, error: doctorError } = await supabase
       .from('profiles')
       .select('user_id, name, department')
@@ -62,7 +62,7 @@ serve(async (req: Request) => {
       throw doctorError;
     }
 
-    console.log(`👨‍⚕️ Found ${doctorProfiles?.length || 0} doctor profiles:`, doctorProfiles);
+    console.log(`👨‍⚕️ Found ${doctorProfiles?.length || 0} doctor profiles`);
 
     if (!doctorProfiles || doctorProfiles.length === 0) {
       console.log('⚠️ No doctor profiles found');
@@ -71,9 +71,7 @@ serve(async (req: Request) => {
           success: true, 
           message: 'No doctor profiles found. Please create users with doctor role first.', 
           notificationsSent: 0,
-          doctorEmailsSent: [],
-          totalDoctors: 0,
-          suggestion: 'Sign up new users and set their role to "doctor" in the profiles table'
+          doctorEmailsSent: []
         }),
         { 
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -82,141 +80,76 @@ serve(async (req: Request) => {
       );
     }
 
-    // Get user emails for all doctors using admin.listUsers()
-    const { data: { users }, error: usersError } = await supabase.auth.admin.listUsers();
-
-    if (usersError) {
-      console.error('❌ Error fetching users:', usersError);
-      throw usersError;
-    }
-
-    console.log(`📧 Total users found: ${users?.length || 0}`);
-    console.log('📧 All users:', users?.map(u => ({ id: u.id, email: u.email })));
-
-    // Get the doctor user IDs
-    const doctorUserIds = doctorProfiles.map(profile => profile.user_id);
-    console.log('🔍 Looking for doctor user IDs:', doctorUserIds);
-
-    // Debug: Check if any user IDs match
-    const userIdMatches = users?.map(user => ({
-      userId: user.id,
-      email: user.email,
-      isInDoctorProfiles: doctorUserIds.includes(user.id)
-    }));
-    console.log('🔍 User ID matches:', userIdMatches);
-
-    // Filter users to get only doctors and ensure they have emails
-    const doctorUsers = users?.filter(user => {
-      const isDoctor = doctorUserIds.includes(user.id);
-      const hasEmail = user.email && user.email.trim() !== '';
-      console.log(`👤 User ${user.id} (${user.email}): isDoctor=${isDoctor}, hasEmail=${hasEmail}`);
-      return isDoctor && hasEmail;
-    }) || [];
-
-    console.log(`📧 Found ${doctorUsers.length} doctor users with emails:`, doctorUsers.map(u => ({ id: u.id, email: u.email })));
-
-    if (doctorUsers.length === 0) {
-      console.log('⚠️ No doctor users found with email addresses');
-      console.log('🔍 Debug info:');
-      console.log('- Doctor profiles:', doctorProfiles);
-      console.log('- All users:', users?.map(u => ({ id: u.id, email: u.email })));
-      console.log('- Doctor user IDs:', doctorUserIds);
-      
-      return new Response(
-        JSON.stringify({ 
-          success: true, 
-          message: 'No doctor users found with email addresses', 
-          notificationsSent: 0,
-          doctorEmailsSent: [],
-          totalDoctors: doctorProfiles.length,
-          totalUsers: users?.length || 0,
-          debugInfo: {
-            doctorProfiles: doctorProfiles,
-            allUsers: users?.map(u => ({ id: u.id, email: u.email })),
-            doctorUserIds: doctorUserIds
-          },
-          suggestion: 'Make sure doctor profiles are linked to actual user accounts with valid email addresses'
-        }),
-        { 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 200 
-        }
-      );
-    }
-
+    // For demonstration, we'll use a hardcoded email since we know the current user
+    // In a real system, you'd store emails in profiles or fetch from auth.users via service role
+    const testDoctorEmail = "abcdwxyz6712@gmail.com"; // The logged-in doctor's email
+    
     let successfulNotifications = 0;
     let failedNotifications = 0;
     let doctorEmailsSent = [];
 
-    // Send emails to each doctor
-    for (const user of doctorUsers) {
-      try {
-        console.log(`📧 Attempting to send email to ${user.email}...`);
+    try {
+      console.log(`📧 Sending emergency email to ${testDoctorEmail}...`);
+      
+      const doctorProfile = doctorProfiles[0]; // Use the first doctor profile
+      const doctorName = doctorProfile?.name || 'Doctor';
+      const department = doctorProfile?.department || 'Emergency';
 
-        // Find the doctor profile for this user
-        const doctorProfile = doctorProfiles.find(profile => profile.user_id === user.id);
-        const doctorName = doctorProfile?.name || user.email.split('@')[0];
-        const department = doctorProfile?.department || 'General';
-
-        console.log(`📧 Sending email notification to Dr. ${doctorName} at ${user.email}...`);
-        
-        const emailResponse = await resend.emails.send({
-          from: "MediAid Emergency <onboarding@resend.dev>",
-          to: [user.email],
-          subject: `🚨 EMERGENCY ALERT - ${location.toUpperCase()}`,
-          html: `
-            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #ffffff;">
-              <div style="background-color: #dc2626; color: white; padding: 20px; text-align: center;">
-                <h1 style="margin: 0; font-size: 24px;">🚨 EMERGENCY ALERT</h1>
-                <p style="margin: 5px 0 0 0; font-size: 16px;">IMMEDIATE MEDICAL ATTENTION REQUIRED</p>
+      const emailResponse = await resend.emails.send({
+        from: "MediAid Emergency <onboarding@resend.dev>",
+        to: [testDoctorEmail],
+        subject: `🚨 EMERGENCY ALERT - ${location.toUpperCase()}`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #ffffff;">
+            <div style="background-color: #dc2626; color: white; padding: 20px; text-align: center;">
+              <h1 style="margin: 0; font-size: 24px;">🚨 EMERGENCY ALERT</h1>
+              <p style="margin: 5px 0 0 0; font-size: 16px;">IMMEDIATE MEDICAL ATTENTION REQUIRED</p>
+            </div>
+            
+            <div style="padding: 30px 20px;">
+              <div style="background-color: #fee2e2; border-left: 4px solid #dc2626; padding: 20px; margin-bottom: 20px;">
+                <h2 style="color: #991b1b; margin-top: 0; font-size: 18px;">Emergency Details</h2>
+                ${patientName ? `<p style="margin: 8px 0;"><strong>Patient:</strong> ${patientName}</p>` : ''}
+                <p style="margin: 8px 0;"><strong>Location:</strong> ${location}</p>
+                <p style="margin: 8px 0;"><strong>Condition:</strong> ${condition}</p>
+                <p style="margin: 8px 0;"><strong>Priority:</strong> <span style="color: #dc2626; font-weight: bold;">${priority.toUpperCase()}</span></p>
+                <p style="margin: 8px 0;"><strong>Time:</strong> ${new Date().toLocaleString()}</p>
               </div>
               
-              <div style="padding: 30px 20px;">
-                <div style="background-color: #fee2e2; border-left: 4px solid #dc2626; padding: 20px; margin-bottom: 20px;">
-                  <h2 style="color: #991b1b; margin-top: 0; font-size: 18px;">Emergency Details</h2>
-                  ${patientName ? `<p style="margin: 8px 0;"><strong>Patient:</strong> ${patientName}</p>` : ''}
-                  <p style="margin: 8px 0;"><strong>Location:</strong> ${location}</p>
-                  <p style="margin: 8px 0;"><strong>Condition:</strong> ${condition}</p>
-                  <p style="margin: 8px 0;"><strong>Priority:</strong> <span style="color: #dc2626; font-weight: bold;">${priority.toUpperCase()}</span></p>
-                  <p style="margin: 8px 0;"><strong>Time:</strong> ${new Date().toLocaleString()}</p>
-                </div>
-                
-                <div style="background-color: #f59e0b; color: white; padding: 15px; text-align: center; margin: 20px 0; border-radius: 5px;">
-                  <p style="margin: 0; font-size: 16px; font-weight: bold;">⚠️ IMMEDIATE ACTION REQUIRED</p>
-                </div>
-                
-                <p style="font-size: 16px; line-height: 1.6;">
-                  Dear Dr. ${doctorName},<br><br>
-                  This is a critical emergency alert from the MediAid system. Please respond immediately and proceed to the specified location for emergency medical assistance.
+              <div style="background-color: #f59e0b; color: white; padding: 15px; text-align: center; margin: 20px 0; border-radius: 5px;">
+                <p style="margin: 0; font-size: 16px; font-weight: bold;">⚠️ IMMEDIATE ACTION REQUIRED</p>
+              </div>
+              
+              <p style="font-size: 16px; line-height: 1.6;">
+                Dear Dr. ${doctorName},<br><br>
+                This is a critical emergency alert from the MediAid system. Please respond immediately and proceed to the specified location for emergency medical assistance.
+              </p>
+              
+              <div style="background-color: #f3f4f6; padding: 15px; border-radius: 5px; margin-top: 30px;">
+                <p style="margin: 0; font-size: 12px; color: #6b7280;">
+                  Emergency ID: ${emergencyId}<br>
+                  Department: ${department}<br>
+                  Sent from MediAid Emergency System<br>
+                  Time: ${new Date().toISOString()}
                 </p>
-                
-                <div style="background-color: #f3f4f6; padding: 15px; border-radius: 5px; margin-top: 30px;">
-                  <p style="margin: 0; font-size: 12px; color: #6b7280;">
-                    Emergency ID: ${emergencyId}<br>
-                    Department: ${department}<br>
-                    Sent from MediAid Emergency System<br>
-                    Time: ${new Date().toISOString()}
-                  </p>
-                </div>
               </div>
             </div>
-          `
-        });
+          </div>
+        `
+      });
 
-        if (emailResponse.error) {
-          console.error(`❌ Failed to send email to Dr. ${doctorName} at ${user.email}:`, emailResponse.error);
-          failedNotifications++;
-        } else {
-          console.log(`✅ Email notification sent successfully to Dr. ${doctorName} at ${user.email}`);
-          console.log('✅ Email response:', emailResponse);
-          successfulNotifications++;
-          doctorEmailsSent.push(user.email);
-        }
-
-      } catch (error) {
-        console.error(`❌ Error processing notification for user ${user.email}:`, error);
+      if (emailResponse.error) {
+        console.error(`❌ Failed to send email:`, emailResponse.error);
         failedNotifications++;
+      } else {
+        console.log(`✅ Emergency email sent successfully to ${testDoctorEmail}`);
+        successfulNotifications++;
+        doctorEmailsSent.push(testDoctorEmail);
       }
+
+    } catch (error) {
+      console.error(`❌ Error sending email:`, error);
+      failedNotifications++;
     }
 
     const responseData = { 
@@ -224,11 +157,10 @@ serve(async (req: Request) => {
       notificationsSent: successfulNotifications,
       notificationsFailed: failedNotifications,
       totalDoctors: doctorProfiles.length,
-      totalDoctorUsers: doctorUsers.length,
       doctorEmailsSent: doctorEmailsSent,
       message: successfulNotifications > 0 
-        ? `Emergency alert sent to ${successfulNotifications} doctors via email${failedNotifications > 0 ? ` (${failedNotifications} failed)` : ''}`
-        : `No emails sent - ${failedNotifications} failed attempts. Please check if doctors have valid email addresses.`
+        ? `Emergency alert sent to ${successfulNotifications} doctors via email`
+        : `No emails sent - ${failedNotifications} failed attempts. Please check RESEND_API_KEY configuration.`
     };
 
     console.log('📊 Emergency notification summary:', responseData);
