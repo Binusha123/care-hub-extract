@@ -117,9 +117,12 @@ const StaffDashboard = () => {
     try {
       console.log('🔄 Fetching real-time system statistics...');
       
-      // Get total registered users
-      const { data: { users }, error: usersError } = await supabase.auth.admin.listUsers();
-      const totalUsers = users?.length || 0;
+      // Get total users count from profiles table instead of auth.users
+      const { data: profiles, error: profilesError } = await supabase
+        .from('profiles')
+        .select('user_id', { count: 'exact' });
+      
+      const totalUsers = profiles?.length || 0;
       
       const [doctorsResult, emergenciesResult, treatmentsResult, appointmentsResult] = await Promise.all([
         supabase.from('profiles').select('user_id', { count: 'exact' }).eq('role', 'doctor'),
@@ -194,6 +197,7 @@ const StaffDashboard = () => {
         .eq('role', 'doctor');
 
       if (error) throw error;
+      console.log('👨‍⚕️ Found doctor profiles:', profiles);
       setDoctorProfiles(profiles || []);
     } catch (error) {
       console.error('❌ Error fetching doctor profiles:', error);
@@ -246,6 +250,79 @@ const StaffDashboard = () => {
 
   const handleAssignmentInputChange = (field: string, value: string) => {
     setAssignmentForm(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleCreateProfile = async () => {
+    if (!user?.id) {
+      toast({
+        title: "Error",
+        description: "You must be logged in to create a profile",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setLoading(true);
+    try {
+      console.log('🔧 Creating doctor profile for current user:', user.email);
+      
+      // Check if profile already exists
+      const { data: existingProfile } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('user_id', user.id)
+        .single();
+
+      if (existingProfile) {
+        // Update existing profile to doctor role
+        const { error: updateError } = await supabase
+          .from('profiles')
+          .update({
+            role: 'doctor',
+            name: user.email.split('@')[0],
+            department: 'Emergency'
+          })
+          .eq('user_id', user.id);
+
+        if (updateError) throw updateError;
+        
+        toast({
+          title: "Profile Updated",
+          description: "Your profile has been updated to doctor role",
+        });
+      } else {
+        // Create new profile
+        const { error: insertError } = await supabase
+          .from('profiles')
+          .insert({
+            user_id: user.id,
+            name: user.email.split('@')[0],
+            role: 'doctor',
+            department: 'Emergency'
+          });
+
+        if (insertError) throw insertError;
+        
+        toast({
+          title: "Profile Created",
+          description: "Your doctor profile has been created successfully",
+        });
+      }
+
+      // Refresh data
+      fetchDoctorProfiles();
+      fetchSystemStats();
+
+    } catch (error) {
+      console.error('❌ Error creating profile:', error);
+      toast({
+        title: "Error Creating Profile",
+        description: `Failed to create profile: ${error.message}`,
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleCreateDoctor = async () => {
@@ -569,18 +646,47 @@ const StaffDashboard = () => {
           </Card>
         </div>
 
+        {systemStats.totalDoctors === 0 && (
+          <Card className="mb-8 border-yellow-200 dark:border-yellow-800">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-yellow-600 dark:text-yellow-400">
+                <UserPlus className="h-6 w-6" />
+                Set Up Your Doctor Profile
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border border-blue-200 dark:border-blue-800">
+                <p className="text-blue-800 dark:text-blue-200 text-sm mb-2">
+                  ✨ You're logged in as: <strong>{user.email}</strong>
+                </p>
+                <p className="text-blue-800 dark:text-blue-200 text-sm">
+                  Click the button below to set up your doctor profile so you can receive emergency alerts.
+                </p>
+              </div>
+              
+              <Button 
+                onClick={handleCreateProfile}
+                disabled={loading}
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+              >
+                {loading ? "Creating Profile..." : "Set Up My Doctor Profile"}
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+
         {doctorProfiles.length === 0 && (
           <Card className="mb-8 border-green-200 dark:border-green-800">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-green-600 dark:text-green-400">
                 <UserPlus className="h-6 w-6" />
-                Create Doctor Profile (Required for Emergency Alerts)
+                Or Create New Doctor Account
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="bg-yellow-50 dark:bg-yellow-900/20 p-4 rounded-lg border border-yellow-200 dark:border-yellow-800">
-                <p className="text-yellow-800 dark:text-yellow-200 text-sm">
-                  ⚠️ No doctor profiles found. You need to create at least one doctor profile to send emergency alerts.
+              <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg border border-green-200 dark:border-green-800">
+                <p className="text-green-800 dark:text-green-200 text-sm">
+                  💡 You can also create additional doctor accounts for other medical staff.
                 </p>
               </div>
               
