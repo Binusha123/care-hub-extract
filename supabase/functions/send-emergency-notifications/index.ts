@@ -51,26 +51,29 @@ serve(async (req: Request) => {
 
     const resend = new Resend(resendApiKey);
 
-    // Get ALL users
-    const { data: { users }, error: usersError } = await supabase.auth.admin.listUsers();
+    // Get doctor profiles with their user information
+    const { data: doctorProfiles, error: doctorError } = await supabase
+      .from('profiles')
+      .select('user_id, name, department')
+      .eq('role', 'doctor');
 
-    if (usersError) {
-      console.error('❌ Error fetching users:', usersError);
-      throw usersError;
+    if (doctorError) {
+      console.error('❌ Error fetching doctor profiles:', doctorError);
+      throw doctorError;
     }
 
-    console.log(`📋 Found ${users?.length || 0} total users in the system`);
+    console.log(`👨‍⚕️ Found ${doctorProfiles?.length || 0} doctor profiles`);
 
-    if (!users || users.length === 0) {
-      console.log('⚠️ No users found in the system');
+    if (!doctorProfiles || doctorProfiles.length === 0) {
+      console.log('⚠️ No doctor profiles found');
       return new Response(
         JSON.stringify({ 
           success: true, 
-          message: 'No users found in the system', 
+          message: 'No doctor profiles found. Please create users with doctor role first.', 
           notificationsSent: 0,
           doctorEmailsSent: [],
-          totalUsers: 0,
-          totalDoctors: 0
+          totalDoctors: 0,
+          suggestion: 'Sign up new users and set their role to "doctor" in the profiles table'
         }),
         { 
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -79,30 +82,29 @@ serve(async (req: Request) => {
       );
     }
 
-    // Get doctor profiles
-    const { data: doctorProfiles, error: profilesError } = await supabase
-      .from('profiles')
-      .select('user_id, name, department')
-      .eq('role', 'doctor');
+    // Get user emails for all doctors
+    const doctorUserIds = doctorProfiles.map(profile => profile.user_id);
+    const { data: { users }, error: usersError } = await supabase.auth.admin.listUsers();
 
-    if (profilesError) {
-      console.error('❌ Error fetching doctor profiles:', profilesError);
-      throw profilesError;
+    if (usersError) {
+      console.error('❌ Error fetching users:', usersError);
+      throw usersError;
     }
 
-    console.log(`👨‍⚕️ Found ${doctorProfiles?.length || 0} doctor profiles`);
+    // Filter users to get only doctors
+    const doctorUsers = users?.filter(user => doctorUserIds.includes(user.id)) || [];
+    console.log(`📧 Found ${doctorUsers.length} doctor users with emails`);
 
-    if (!doctorProfiles || doctorProfiles.length === 0) {
-      console.log('⚠️ No doctor profiles found - you need to create users with doctor role');
+    if (doctorUsers.length === 0) {
+      console.log('⚠️ No doctor users found with email addresses');
       return new Response(
         JSON.stringify({ 
           success: true, 
-          message: 'No doctor profiles found. Please create users with doctor role first.', 
+          message: 'No doctor users found with email addresses', 
           notificationsSent: 0,
           doctorEmailsSent: [],
-          totalUsers: users.length,
-          totalDoctors: 0,
-          suggestion: 'Sign up new users and set their role to "doctor" in the profiles table'
+          totalDoctors: doctorProfiles.length,
+          suggestion: 'Make sure doctor profiles are linked to actual user accounts'
         }),
         { 
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -115,20 +117,19 @@ serve(async (req: Request) => {
     let failedNotifications = 0;
     let doctorEmailsSent = [];
 
-    // Send emails to doctors
-    for (const doctorProfile of doctorProfiles) {
+    // Send emails to each doctor
+    for (const user of doctorUsers) {
       try {
-        // Find the user data for this doctor
-        const user = users.find(u => u.id === doctorProfile.user_id);
-        
-        if (!user || !user.email) {
-          console.log(`⚠️ Doctor ${doctorProfile.name} has no email address`);
+        if (!user.email) {
+          console.log(`⚠️ User ${user.id} has no email address`);
           failedNotifications++;
           continue;
         }
 
-        const doctorName = doctorProfile.name || user.email.split('@')[0];
-        const department = doctorProfile.department || 'General';
+        // Find the doctor profile for this user
+        const doctorProfile = doctorProfiles.find(profile => profile.user_id === user.id);
+        const doctorName = doctorProfile?.name || user.email.split('@')[0];
+        const department = doctorProfile?.department || 'General';
 
         console.log(`📧 Sending email notification to Dr. ${doctorName} at ${user.email}...`);
         
@@ -186,7 +187,7 @@ serve(async (req: Request) => {
         }
 
       } catch (error) {
-        console.error(`❌ Error processing notification for doctor ${doctorProfile.name}:`, error);
+        console.error(`❌ Error processing notification for user ${user.email}:`, error);
         failedNotifications++;
       }
     }
@@ -196,11 +197,11 @@ serve(async (req: Request) => {
       notificationsSent: successfulNotifications,
       notificationsFailed: failedNotifications,
       totalDoctors: doctorProfiles.length,
-      totalUsers: users.length,
+      totalDoctorUsers: doctorUsers.length,
       doctorEmailsSent: doctorEmailsSent,
       message: successfulNotifications > 0 
         ? `Emergency alert sent to ${successfulNotifications} doctors via email${failedNotifications > 0 ? ` (${failedNotifications} failed)` : ''}`
-        : `No emails sent - ${failedNotifications} failed attempts`
+        : `No emails sent - ${failedNotifications} failed attempts. Please check if doctors have valid email addresses.`
     };
 
     console.log('📊 Emergency notification summary:', responseData);
@@ -220,7 +221,7 @@ serve(async (req: Request) => {
         error: error.message,
         success: false,
         notificationsSent: 0,
-        details: 'Emergency notification system error. Check if RESEND_API_KEY is configured.'
+        details: 'Emergency notification system error. Check function logs for more details.'
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

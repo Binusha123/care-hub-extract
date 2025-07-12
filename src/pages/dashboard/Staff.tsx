@@ -260,6 +260,8 @@ const StaffDashboard = () => {
 
     setLoading(true);
     try {
+      console.log('🔧 Creating doctor account:', createDoctorForm.email);
+      
       // Create the user account
       const { data: authData, error: authError } = await supabase.auth.admin.createUser({
         email: createDoctorForm.email,
@@ -267,7 +269,12 @@ const StaffDashboard = () => {
         email_confirm: true
       });
 
-      if (authError) throw authError;
+      if (authError) {
+        console.error('❌ Error creating user:', authError);
+        throw authError;
+      }
+
+      console.log('✅ User created successfully:', authData.user.id);
 
       // Create the doctor profile
       const { error: profileError } = await supabase
@@ -279,11 +286,16 @@ const StaffDashboard = () => {
           department: createDoctorForm.department || 'General'
         });
 
-      if (profileError) throw profileError;
+      if (profileError) {
+        console.error('❌ Error creating profile:', profileError);
+        throw profileError;
+      }
+
+      console.log('✅ Doctor profile created successfully');
 
       toast({
-        title: "Doctor Created",
-        description: `Dr. ${createDoctorForm.name} has been created successfully`,
+        title: "Doctor Created Successfully",
+        description: `Dr. ${createDoctorForm.name} has been created and can now receive emergency alerts`,
       });
 
       setCreateDoctorForm({
@@ -298,9 +310,9 @@ const StaffDashboard = () => {
       fetchSystemStats();
 
     } catch (error) {
-      console.error('Error creating doctor:', error);
+      console.error('❌ Error creating doctor:', error);
       toast({
-        title: "Error",
+        title: "Error Creating Doctor",
         description: `Failed to create doctor: ${error.message}`,
         variant: "destructive"
       });
@@ -370,17 +382,10 @@ const StaffDashboard = () => {
       return;
     }
 
-    if (doctorProfiles.length === 0) {
-      toast({
-        title: "No Doctors Available",
-        description: "Please create doctor profiles first before sending emergency alerts",
-        variant: "destructive"
-      });
-      return;
-    }
-
     setLoading(true);
     try {
+      console.log('🚨 Creating emergency alert...');
+      
       const { data: emergency, error } = await supabase
         .from('emergencies')
         .insert({
@@ -395,8 +400,10 @@ const StaffDashboard = () => {
 
       if (error) throw error;
 
-      console.log('🚨 Emergency created:', emergency);
+      console.log('✅ Emergency created:', emergency);
 
+      // Send notifications to doctors
+      console.log('📧 Sending emergency notifications...');
       const { data: notificationResult, error: notificationError } = await supabase.functions.invoke(
         'send-emergency-notifications',
         {
@@ -414,22 +421,24 @@ const StaffDashboard = () => {
         console.error('❌ Error sending notifications:', notificationError);
         toast({
           title: "Emergency Created",
-          description: "Emergency alert created but failed to send notifications. Check if RESEND_API_KEY is configured.",
+          description: "Emergency alert created but failed to send notifications. Please check your setup.",
           variant: "destructive"
         });
       } else {
         console.log('✅ Notification result:', notificationResult);
-        const emailsSent = notificationResult.doctorEmailsSent || [];
         
         if (notificationResult.notificationsSent > 0) {
+          const emailList = notificationResult.doctorEmailsSent.slice(0, 2).join(', ');
+          const moreCount = notificationResult.doctorEmailsSent.length - 2;
+          
           toast({
-            title: "Emergency Alert Sent",
-            description: `Emergency alert sent to ${notificationResult.notificationsSent} doctors via email. Emails sent to: ${emailsSent.slice(0, 3).join(', ')}${emailsSent.length > 3 ? '...' : ''}`,
+            title: "Emergency Alert Sent Successfully",
+            description: `Emergency alert sent to ${notificationResult.notificationsSent} doctors: ${emailList}${moreCount > 0 ? ` and ${moreCount} more` : ''}`,
           });
         } else {
           toast({
-            title: "Emergency Alert Failed",
-            description: notificationResult.message || "No emails were sent. Check if RESEND_API_KEY is configured and doctors exist.",
+            title: "No Doctors Available",
+            description: notificationResult.message || "No doctor profiles found to send alerts to. Please create doctor accounts first.",
             variant: "destructive"
           });
         }
