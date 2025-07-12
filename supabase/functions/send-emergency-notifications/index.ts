@@ -55,7 +55,7 @@ serve(async (req: Request) => {
       );
     }
 
-    // Get doctor profiles to match with users
+    // Get ONLY doctor profiles
     const { data: doctorProfiles, error: profilesError } = await supabase
       .from('profiles')
       .select('user_id, name, department')
@@ -63,29 +63,47 @@ serve(async (req: Request) => {
 
     if (profilesError) {
       console.error('❌ Error fetching doctor profiles:', profilesError);
+      throw profilesError;
     }
 
     console.log(`👨‍⚕️ Found ${doctorProfiles?.length || 0} doctor profiles`);
+
+    if (!doctorProfiles || doctorProfiles.length === 0) {
+      console.log('⚠️ No doctor profiles found');
+      return new Response(
+        JSON.stringify({ 
+          success: true, 
+          message: 'No doctors found to notify', 
+          notificationsSent: 0,
+          doctorEmailsSent: []
+        }),
+        { 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 200 
+        }
+      );
+    }
 
     let successfulNotifications = 0;
     let failedNotifications = 0;
     let doctorEmailsSent = [];
 
-    // Send emails to all users (since we want to notify everyone)
-    for (const user of users) {
+    // Send emails ONLY to doctors (users who have doctor profiles)
+    for (const doctorProfile of doctorProfiles) {
       try {
-        if (!user.email) {
-          console.log(`⚠️ User ${user.id} has no email address`);
+        // Find the user data for this doctor
+        const user = users.find(u => u.id === doctorProfile.user_id);
+        
+        if (!user || !user.email) {
+          console.log(`⚠️ Doctor ${doctorProfile.name} has no email address`);
           failedNotifications++;
           continue;
         }
 
-        // Find matching profile for this user
-        const profile = doctorProfiles?.find(p => p.user_id === user.id);
-        const doctorName = profile?.name || user.email.split('@')[0];
-        const department = profile?.department || 'General';
+        const doctorName = doctorProfile.name || user.email.split('@')[0];
+        const department = doctorProfile.department || 'General';
 
-        console.log(`📧 Sending email notification to ${doctorName} at ${user.email}...`);
+        console.log(`📧 Sending email notification to Dr. ${doctorName} at ${user.email}...`);
         
         // Call the send-emergency-email function
         const { data: emailResult, error: emailError } = await supabase.functions.invoke('send-emergency-email', {
@@ -115,13 +133,14 @@ serve(async (req: Request) => {
                   </div>
                   
                   <p style="font-size: 16px; line-height: 1.6;">
-                    Dear ${doctorName},<br><br>
+                    Dear Dr. ${doctorName},<br><br>
                     This is a critical emergency alert from the MediAid system. Please respond immediately and proceed to the specified location for emergency medical assistance.
                   </p>
                   
                   <div style="background-color: #f3f4f6; padding: 15px; border-radius: 5px; margin-top: 30px;">
                     <p style="margin: 0; font-size: 12px; color: #6b7280;">
                       Emergency ID: ${emergencyId}<br>
+                      Department: ${department}<br>
                       Sent from MediAid Emergency System<br>
                       Time: ${new Date().toISOString()}
                     </p>
@@ -140,16 +159,16 @@ serve(async (req: Request) => {
         });
 
         if (emailError) {
-          console.error(`❌ Failed to send email to ${user.email}:`, emailError);
+          console.error(`❌ Failed to send email to Dr. ${doctorName} at ${user.email}:`, emailError);
           failedNotifications++;
         } else {
-          console.log(`✅ Email notification sent successfully to ${user.email}`);
+          console.log(`✅ Email notification sent successfully to Dr. ${doctorName} at ${user.email}`);
           successfulNotifications++;
           doctorEmailsSent.push(user.email);
         }
 
       } catch (error) {
-        console.error(`❌ Error processing notification for user ${user.id}:`, error);
+        console.error(`❌ Error processing notification for doctor ${doctorProfile.name}:`, error);
         failedNotifications++;
       }
     }
@@ -158,9 +177,9 @@ serve(async (req: Request) => {
       success: true, 
       notificationsSent: successfulNotifications,
       notificationsFailed: failedNotifications,
-      totalUsers: users.length,
+      totalDoctors: doctorProfiles.length,
       doctorEmailsSent: doctorEmailsSent,
-      message: `Emergency alert sent to ${successfulNotifications} users via email${failedNotifications > 0 ? ` (${failedNotifications} failed)` : ''}`
+      message: `Emergency alert sent to ${successfulNotifications} doctors via email${failedNotifications > 0 ? ` (${failedNotifications} failed)` : ''}`
     };
 
     console.log('📊 Emergency notification summary:', responseData);
