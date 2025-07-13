@@ -26,6 +26,7 @@ interface DoctorProfile {
   user_id: string;
   name?: string;
   department?: string;
+  role?: string;
 }
 
 interface TreatmentQueue {
@@ -122,6 +123,10 @@ const StaffDashboard = () => {
         .from('profiles')
         .select('user_id', { count: 'exact' });
       
+      if (profilesError) {
+        console.error('❌ Error fetching profiles:', profilesError);
+      }
+      
       const totalUsers = profiles?.length || 0;
       
       const [doctorsResult, emergenciesResult, treatmentsResult, appointmentsResult] = await Promise.all([
@@ -140,6 +145,12 @@ const StaffDashboard = () => {
       };
 
       console.log('📊 Updated system stats:', newStats);
+      console.log('🔍 Doctor count breakdown:', {
+        totalProfiles: profiles?.length,
+        doctorProfiles: doctorsResult.count,
+        doctorData: doctorsResult.data
+      });
+      
       setSystemStats(newStats);
 
     } catch (error) {
@@ -191,16 +202,42 @@ const StaffDashboard = () => {
 
   const fetchDoctorProfiles = async () => {
     try {
+      console.log('🔍 Fetching all profiles to debug...');
+      
+      // First, get ALL profiles to see what we have
+      const { data: allProfiles, error: allError } = await supabase
+        .from('profiles')
+        .select('*');
+      
+      if (allError) {
+        console.error('❌ Error fetching all profiles:', allError);
+        throw allError;
+      }
+      
+      console.log('📋 All profiles in database:', allProfiles);
+      
+      // Now get just doctor profiles
       const { data: profiles, error } = await supabase
         .from('profiles')
-        .select('user_id, name, department')
+        .select('user_id, name, department, role')
         .eq('role', 'doctor');
 
-      if (error) throw error;
-      console.log('👨‍⚕️ Found doctor profiles:', profiles);
+      if (error) {
+        console.error('❌ Error fetching doctor profiles:', error);
+        throw error;
+      }
+      
+      console.log('👨‍⚕️ Doctor profiles found:', profiles);
+      console.log('🔢 Doctor count:', profiles?.length || 0);
+      
       setDoctorProfiles(profiles || []);
     } catch (error) {
-      console.error('❌ Error fetching doctor profiles:', error);
+      console.error('❌ Error in fetchDoctorProfiles:', error);
+      toast({
+        title: "Error",
+        description: "Failed to fetch doctor profiles",
+        variant: "destructive"
+      });
     }
   };
 
@@ -265,53 +302,87 @@ const StaffDashboard = () => {
     setLoading(true);
     try {
       console.log('🔧 Creating doctor profile for current user:', user.email);
+      console.log('🆔 User ID:', user.id);
       
       // Check if profile already exists
-      const { data: existingProfile } = await supabase
+      const { data: existingProfile, error: fetchError } = await supabase
         .from('profiles')
         .select('*')
         .eq('user_id', user.id)
         .single();
 
+      if (fetchError && fetchError.code !== 'PGRST116') {
+        console.error('❌ Error checking existing profile:', fetchError);
+        throw fetchError;
+      }
+
+      console.log('🔍 Existing profile:', existingProfile);
+
       if (existingProfile) {
+        console.log('📝 Updating existing profile to doctor role...');
         // Update existing profile to doctor role
         const { error: updateError } = await supabase
           .from('profiles')
           .update({
             role: 'doctor',
-            name: user.email.split('@')[0],
-            department: 'Emergency'
+            name: existingProfile.name || user.email.split('@')[0],
+            department: existingProfile.department || 'Emergency'
           })
           .eq('user_id', user.id);
 
-        if (updateError) throw updateError;
+        if (updateError) {
+          console.error('❌ Error updating profile:', updateError);
+          throw updateError;
+        }
         
+        console.log('✅ Profile updated successfully');
         toast({
           title: "Profile Updated",
           description: "Your profile has been updated to doctor role",
         });
       } else {
+        console.log('➕ Creating new doctor profile...');
         // Create new profile
-        const { error: insertError } = await supabase
-          .from('profiles')
-          .insert({
-            user_id: user.id,
-            name: user.email.split('@')[0],
-            role: 'doctor',
-            department: 'Emergency'
-          });
-
-        if (insertError) throw insertError;
+        const profileData = {
+          user_id: user.id,
+          name: user.email.split('@')[0],
+          role: 'doctor',
+          department: 'Emergency'
+        };
         
+        console.log('📤 Inserting profile data:', profileData);
+        
+        const { error: insertError, data: insertedData } = await supabase
+          .from('profiles')
+          .insert(profileData)
+          .select();
+
+        if (insertError) {
+          console.error('❌ Error creating profile:', insertError);
+          throw insertError;
+        }
+        
+        console.log('✅ Profile created successfully:', insertedData);
         toast({
           title: "Profile Created",
           description: "Your doctor profile has been created successfully",
         });
       }
 
-      // Refresh data
-      fetchDoctorProfiles();
-      fetchSystemStats();
+      // Refresh data and verify the profile was created
+      await fetchDoctorProfiles();
+      await fetchSystemStats();
+      
+      // Double-check that the profile was created correctly
+      setTimeout(async () => {
+        const { data: verifyProfile } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('user_id', user.id)
+          .single();
+        
+        console.log('🔍 Profile verification after creation:', verifyProfile);
+      }, 1000);
 
     } catch (error) {
       console.error('❌ Error creating profile:', error);
@@ -463,6 +534,17 @@ const StaffDashboard = () => {
     try {
       console.log('🚨 Creating emergency alert...');
       
+      // First, let's check how many doctor profiles we have before sending
+      const { data: doctorCheck, error: doctorCheckError } = await supabase
+        .from('profiles')
+        .select('user_id, name, role')
+        .eq('role', 'doctor');
+      
+      console.log('🔍 Pre-emergency doctor check:', {
+        count: doctorCheck?.length || 0,
+        doctors: doctorCheck
+      });
+      
       const { data: emergency, error } = await supabase
         .from('emergencies')
         .insert({
@@ -583,6 +665,28 @@ const StaffDashboard = () => {
             Monitor patient care and trigger emergency alerts when needed.
           </p>
         </div>
+
+        {/* Debug Information Card */}
+        <Card className="mb-8 border-blue-200 dark:border-blue-800">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-blue-600 dark:text-blue-400">
+              🔍 System Debug Information
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+              <div>
+                <p><strong>Current User ID:</strong> {user.id}</p>
+                <p><strong>Current User Email:</strong> {user.email}</p>
+                <p><strong>Total Profiles:</strong> {systemStats.totalUsers}</p>
+              </div>
+              <div>
+                <p><strong>Doctor Profiles Found:</strong> {systemStats.totalDoctors}</p>
+                <p><strong>Doctor Names:</strong> {doctorProfiles.map(d => d.name).join(', ') || 'None'}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
           <Card className="bg-gradient-to-r from-green-50 to-green-100 border-green-200">
