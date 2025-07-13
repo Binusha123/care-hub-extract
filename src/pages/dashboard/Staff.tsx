@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -500,7 +499,7 @@ const StaffDashboard = () => {
       console.log('✅ Emergency created:', emergency);
 
       // Send notifications with detailed logging
-      console.log('📧 Attempting to send emergency notifications...');
+      console.log('📧 Attempting to send emergency notifications to all doctors...');
       
       try {
         const notificationPayload = {
@@ -534,7 +533,7 @@ const StaffDashboard = () => {
           console.log('✅ Notifications sent successfully');
           toast({
             title: "🚨 Emergency Alert Sent Successfully!",
-            description: `Emergency alert sent to ${notificationResult.notificationsSent} doctor(s). Email sent to: ${notificationResult.doctorEmailsSent?.join(', ')}`,
+            description: `Emergency alert sent to ${notificationResult.notificationsSent} doctor(s): ${notificationResult.doctorEmailsSent?.join(', ')}`,
           });
 
           showNotification("Emergency Alert Sent", `Emergency alert sent for patient at ${formData.location}`);
@@ -885,12 +884,12 @@ const StaffDashboard = () => {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="bg-amber-50 dark:bg-amber-900/20 p-4 rounded-lg border border-amber-200 dark:border-amber-800 mb-4">
-              <p className="text-amber-800 dark:text-amber-200 text-sm font-medium">
-                📧 Email will be sent to: abcdwxyz6712@gmail.com
+            <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg border border-green-200 dark:border-green-800 mb-4">
+              <p className="text-green-800 dark:text-green-200 text-sm font-medium">
+                📧 Emergency emails will be sent to ALL doctors in the system
               </p>
-              <p className="text-amber-700 dark:text-amber-300 text-xs mt-1">
-                Emergency notifications are configured and ready to send.
+              <p className="text-green-700 dark:text-green-300 text-xs mt-1">
+                Currently found {systemStats.totalDoctors} doctor(s): {doctorProfiles.map(d => d.name).join(', ')}
               </p>
             </div>
             

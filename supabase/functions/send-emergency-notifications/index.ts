@@ -1,5 +1,6 @@
 
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -58,7 +59,98 @@ serve(async (req: Request) => {
       );
     }
 
-    console.log('📧 Attempting to send email...');
+    // Initialize Supabase client to fetch doctor emails
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    
+    console.log('🔄 Initializing Supabase client...');
+    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    // Fetch all doctor profiles with their user details
+    console.log('👨‍⚕️ Fetching doctor profiles...');
+    const { data: doctorProfiles, error: profileError } = await supabase
+      .from('profiles')
+      .select('user_id, name, department')
+      .eq('role', 'doctor');
+
+    if (profileError) {
+      console.error('❌ Error fetching doctor profiles:', profileError);
+      return new Response(
+        JSON.stringify({ 
+          success: false, 
+          error: `Failed to fetch doctor profiles: ${profileError.message}`,
+          notificationsSent: 0,
+          doctorEmailsSent: []
+        }),
+        { 
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        }
+      );
+    }
+
+    console.log('👨‍⚕️ Found doctor profiles:', doctorProfiles?.length || 0);
+
+    if (!doctorProfiles || doctorProfiles.length === 0) {
+      console.log('❌ No doctor profiles found');
+      return new Response(
+        JSON.stringify({ 
+          success: false, 
+          error: 'No doctor profiles found in the system',
+          notificationsSent: 0,
+          doctorEmailsSent: []
+        }),
+        { 
+          status: 404,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        }
+      );
+    }
+
+    // Get user emails for all doctors
+    const doctorUserIds = doctorProfiles.map(p => p.user_id);
+    console.log('📧 Fetching user emails for doctor IDs:', doctorUserIds);
+
+    const { data: { users }, error: userError } = await supabase.auth.admin.listUsers();
+    if (userError) {
+      console.error('❌ Error fetching users:', userError);
+      return new Response(
+        JSON.stringify({ 
+          success: false, 
+          error: `Failed to fetch user emails: ${userError.message}`,
+          notificationsSent: 0,
+          doctorEmailsSent: []
+        }),
+        { 
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        }
+      );
+    }
+
+    // Filter users to get only doctors
+    const doctorUsers = users.filter(user => doctorUserIds.includes(user.id));
+    const doctorEmails = doctorUsers.map(user => user.email).filter(email => email);
+
+    console.log('📧 Doctor emails found:', doctorEmails);
+
+    if (doctorEmails.length === 0) {
+      console.log('❌ No doctor emails found');
+      return new Response(
+        JSON.stringify({ 
+          success: false, 
+          error: 'No doctor email addresses found',
+          notificationsSent: 0,
+          doctorEmailsSent: []
+        }),
+        { 
+          status: 404,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        }
+      );
+    }
+
+    console.log('📧 Attempting to send emails to doctors...');
     
     // Create email content
     const emailHtml = `
@@ -84,59 +176,52 @@ serve(async (req: Request) => {
       </div>
     `;
 
-    const testEmail = "abcdwxyz6712@gmail.com";
-    
-    // Make the email request using fetch
-    const emailResponse = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${resendApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        from: "MediAid Emergency <onboarding@resend.dev>",
-        to: [testEmail],
-        subject: `🚨 EMERGENCY ALERT - ${location} - Priority: ${priority.toUpperCase()}`,
-        html: emailHtml,
+    // Send emails to all doctors
+    const emailPromises = doctorEmails.map(async (email) => {
+      console.log(`📧 Sending email to: ${email}`);
+      
+      const emailResponse = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
         headers: {
-          'X-Priority': '1',
-          'X-MSMail-Priority': 'High',
-          'Importance': 'high'
-        }
-      }),
+          'Authorization': `Bearer ${resendApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          from: "MediAid Emergency <onboarding@resend.dev>",
+          to: [email],
+          subject: `🚨 EMERGENCY ALERT - ${location} - Priority: ${priority.toUpperCase()}`,
+          html: emailHtml,
+          headers: {
+            'X-Priority': '1',
+            'X-MSMail-Priority': 'High',
+            'Importance': 'high'
+          }
+        }),
+      });
+
+      const emailData = await emailResponse.json();
+      
+      if (!emailResponse.ok) {
+        console.log(`❌ Failed to send email to ${email}:`, emailData);
+        throw new Error(`Failed to send email to ${email}: ${emailData.message}`);
+      }
+      
+      console.log(`✅ Email sent successfully to ${email}! ID:`, emailData.id);
+      return { email, id: emailData.id };
     });
 
-    console.log('📧 Email API response status:', emailResponse.status);
+    // Wait for all emails to be sent
+    const emailResults = await Promise.all(emailPromises);
     
-    const emailData = await emailResponse.json();
-    console.log('📧 Email API response data:', emailData);
-
-    if (!emailResponse.ok) {
-      console.log('❌ Email API error:', emailData);
-      return new Response(
-        JSON.stringify({ 
-          success: false, 
-          error: `Email API error: ${emailData.message || 'Unknown error'}`,
-          details: emailData,
-          notificationsSent: 0,
-          doctorEmailsSent: []
-        }),
-        { 
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        }
-      );
-    }
-
-    console.log('✅ Email sent successfully! ID:', emailData.id);
+    console.log('✅ All emails sent successfully!', emailResults);
     
     return new Response(
       JSON.stringify({ 
         success: true, 
-        notificationsSent: 1,
-        doctorEmailsSent: [testEmail],
-        emailId: emailData.id,
-        message: `Emergency alert sent successfully to ${testEmail}`,
+        notificationsSent: emailResults.length,
+        doctorEmailsSent: doctorEmails,
+        emailIds: emailResults.map(r => r.id),
+        message: `Emergency alert sent successfully to ${emailResults.length} doctor(s): ${doctorEmails.join(', ')}`,
         timestamp: new Date().toISOString()
       }),
       {
