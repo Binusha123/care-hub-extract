@@ -498,64 +498,47 @@ const StaffDashboard = () => {
 
       console.log('✅ Emergency created:', emergency);
 
-      // Send notifications to doctors with better error handling
+      // Send notifications to doctors
       console.log('📧 Sending emergency notifications...');
       
-      try {
-        const { data: notificationResult, error: notificationError } = await supabase.functions.invoke(
-          'send-emergency-notifications',
-          {
-            body: {
-              emergencyId: emergency.id,
-              patientName: formData.patient_name,
-              location: formData.location,
-              condition: formData.condition,
-              priority: 'high'
-            }
+      const { data: notificationResult, error: notificationError } = await supabase.functions.invoke(
+        'send-emergency-notifications',
+        {
+          body: {
+            emergencyId: emergency.id,
+            patientName: formData.patient_name,
+            location: formData.location,
+            condition: formData.condition,
+            priority: 'high'
           }
-        );
-
-        console.log('📧 Notification result:', notificationResult);
-        console.log('📧 Notification error:', notificationError);
-
-        if (notificationError) {
-          console.error('❌ Edge Function invocation error:', notificationError);
-          toast({
-            title: "Emergency Created",
-            description: `Emergency alert created but failed to send notifications: ${notificationError.message}`,
-            variant: "destructive"
-          });
-        } else if (notificationResult && notificationResult.success) {
-          const emailsSent = notificationResult.notificationsSent || 0;
-          const emailList = notificationResult.doctorEmailsSent?.slice(0, 2).join(', ') || '';
-          
-          toast({
-            title: "🚨 Emergency Alert Sent Successfully!",
-            description: `Emergency alert sent to ${emailsSent} doctor${emailsSent > 1 ? 's' : ''}${emailList ? `: ${emailList}` : ''}`,
-          });
-
-          showNotification("Emergency Alert Sent", `Emergency alert sent for patient at ${formData.location}`);
-        } else if (notificationResult && !notificationResult.success) {
-          console.error('❌ Function returned error:', notificationResult.error);
-          toast({
-            title: "Emergency Created",
-            description: `Emergency alert created but notification failed: ${notificationResult.error}`,
-            variant: "destructive"
-          });
-        } else {
-          console.error('❌ Unexpected response:', notificationResult);
-          toast({
-            title: "Emergency Created",
-            description: "Emergency alert created but notification status unknown. Check function logs.",
-            variant: "destructive"
-          });
         }
+      );
 
-      } catch (invokeError) {
-        console.error('❌ Function invoke error:', invokeError);
+      console.log('📧 Notification result:', notificationResult);
+      console.log('📧 Notification error:', notificationError);
+
+      if (notificationError) {
+        console.error('❌ Edge Function error:', notificationError);
         toast({
           title: "Emergency Created",
-          description: `Emergency alert created but failed to invoke notification function: ${invokeError.message}`,
+          description: `Emergency alert created but notification failed: ${notificationError.message}`,
+          variant: "destructive"
+        });
+      } else if (notificationResult?.success) {
+        const emailsSent = notificationResult.notificationsSent || 0;
+        const emailList = notificationResult.doctorEmailsSent?.join(', ') || '';
+        
+        toast({
+          title: "🚨 Emergency Alert Sent Successfully!",
+          description: `Emergency alert sent to ${emailsSent} doctor${emailsSent > 1 ? 's' : ''}${emailList ? `: ${emailList}` : ''}`,
+        });
+
+        showNotification("Emergency Alert Sent", `Emergency alert sent for patient at ${formData.location}`);
+      } else {
+        console.error('❌ Function returned error:', notificationResult);
+        toast({
+          title: "Emergency Created",
+          description: `Emergency alert created but notification failed: ${notificationResult?.error || 'Unknown error'}`,
           variant: "destructive"
         });
       }
