@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -498,48 +499,63 @@ const StaffDashboard = () => {
 
       console.log('✅ Emergency created:', emergency);
 
-      // Send notifications
-      console.log('📧 Sending emergency notifications...');
+      // Send notifications with detailed logging
+      console.log('📧 Attempting to send emergency notifications...');
       
       try {
-        const { data: notificationResult } = await supabase.functions.invoke(
+        const notificationPayload = {
+          emergencyId: emergency.id,
+          patientName: formData.patient_name,
+          location: formData.location,
+          condition: formData.condition,
+          priority: 'high'
+        };
+        
+        console.log('📤 Sending payload:', notificationPayload);
+        
+        const { data: notificationResult, error: functionError } = await supabase.functions.invoke(
           'send-emergency-notifications',
           {
-            body: {
-              emergencyId: emergency.id,
-              patientName: formData.patient_name,
-              location: formData.location,
-              condition: formData.condition,
-              priority: 'high'
-            }
+            body: notificationPayload
           }
         );
 
-        console.log('📧 Notification result:', notificationResult);
+        console.log('📧 Function result:', notificationResult);
+        console.log('📧 Function error:', functionError);
 
-        if (notificationResult?.success) {
+        if (functionError) {
+          console.error('❌ Function invocation error:', functionError);
+          toast({
+            title: "⚠️ Emergency Created",
+            description: `Emergency alert created but email service failed: ${functionError.message}. Emergency ID: ${emergency.id}`,
+            variant: "destructive"
+          });
+        } else if (notificationResult?.success) {
+          console.log('✅ Notifications sent successfully');
           toast({
             title: "🚨 Emergency Alert Sent Successfully!",
-            description: `Emergency alert sent to ${notificationResult.notificationsSent} doctor(s): ${notificationResult.doctorEmailsSent?.join(', ')}`,
+            description: `Emergency alert sent to ${notificationResult.notificationsSent} doctor(s). Email sent to: ${notificationResult.doctorEmailsSent?.join(', ')}`,
           });
 
           showNotification("Emergency Alert Sent", `Emergency alert sent for patient at ${formData.location}`);
         } else {
+          console.log('❌ Notification failed:', notificationResult);
           toast({
-            title: "Emergency Created",
-            description: `Emergency created but email failed: ${notificationResult?.error || 'Unknown error'}`,
+            title: "⚠️ Emergency Created",
+            description: `Emergency created but email failed: ${notificationResult?.error || 'Unknown notification error'}. Emergency ID: ${emergency.id}`,
             variant: "destructive"
           });
         }
       } catch (notificationError: any) {
-        console.error('❌ Notification error:', notificationError);
+        console.error('❌ Notification catch error:', notificationError);
         toast({
-          title: "Emergency Created",
-          description: `Emergency created but notification failed: ${notificationError.message}`,
+          title: "⚠️ Emergency Created",
+          description: `Emergency created but notification system failed: ${notificationError.message}. Emergency ID: ${emergency.id}`,
           variant: "destructive"
         });
       }
 
+      // Clear form regardless of email status
       setFormData({
         patient_id: "",
         patient_name: "",
@@ -547,7 +563,9 @@ const StaffDashboard = () => {
         condition: ""
       });
 
+      // Refresh stats
       fetchSystemStats();
+      
     } catch (error) {
       console.error('❌ Error creating emergency:', error);
       toast({
@@ -586,7 +604,7 @@ const StaffDashboard = () => {
             </Button>
             <div className="flex items-center gap-2">
               <User className="h-5 w-5" />
-              <span className="font-medium">{user.name}</span>
+              <span className="font-medium">{user?.name}</span>
               <Badge variant="secondary">Staff</Badge>
             </div>
             <Button variant="outline" onClick={handleLogout}>
@@ -706,7 +724,7 @@ const StaffDashboard = () => {
             <CardContent className="space-y-4">
               <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border border-blue-200 dark:border-blue-800">
                 <p className="text-blue-800 dark:text-blue-200 text-sm mb-2">
-                  ✨ You're logged in as: <strong>{user.email}</strong>
+                  ✨ You're logged in as: <strong>{user?.email}</strong>
                 </p>
                 <p className="text-blue-800 dark:text-blue-200 text-sm">
                   Click the button below to set up your doctor profile so you can receive emergency alerts.
@@ -867,6 +885,15 @@ const StaffDashboard = () => {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
+            <div className="bg-amber-50 dark:bg-amber-900/20 p-4 rounded-lg border border-amber-200 dark:border-amber-800 mb-4">
+              <p className="text-amber-800 dark:text-amber-200 text-sm font-medium">
+                📧 Email will be sent to: abcdwxyz6712@gmail.com
+              </p>
+              <p className="text-amber-700 dark:text-amber-300 text-xs mt-1">
+                Emergency notifications are configured and ready to send.
+              </p>
+            </div>
+            
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="patient_id">Patient ID *</Label>
@@ -912,9 +939,9 @@ const StaffDashboard = () => {
             <Button 
               onClick={handleTriggerEmergency}
               disabled={loading}
-              className="w-full bg-red-600 hover:bg-red-700 text-white"
+              className="w-full bg-red-600 hover:bg-red-700 text-white font-semibold"
             >
-              {loading ? "Sending Alert..." : "🚨 Trigger Emergency"}
+              {loading ? "Sending Alert..." : "🚨 Trigger Emergency Alert"}
             </Button>
           </CardContent>
         </Card>
