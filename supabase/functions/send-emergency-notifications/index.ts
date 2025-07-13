@@ -49,6 +49,7 @@ serve(async (req: Request) => {
       );
     }
 
+    console.log('✅ RESEND_API_KEY found, initializing Resend...');
     const resend = new Resend(resendApiKey);
 
     // Get doctor profiles with email addresses from profiles table
@@ -80,9 +81,8 @@ serve(async (req: Request) => {
       );
     }
 
-    // For demonstration, we'll use a hardcoded email since we know the current user
-    // In a real system, you'd store emails in profiles or fetch from auth.users via service role
-    const testDoctorEmail = "abcdwxyz6712@gmail.com"; // The logged-in doctor's email
+    // Use the logged-in doctor's email for demo purposes
+    const testDoctorEmail = "abcdwxyz6712@gmail.com"; 
     
     let successfulNotifications = 0;
     let failedNotifications = 0;
@@ -91,10 +91,11 @@ serve(async (req: Request) => {
     try {
       console.log(`📧 Sending emergency email to ${testDoctorEmail}...`);
       
-      const doctorProfile = doctorProfiles[0]; // Use the first doctor profile
+      const doctorProfile = doctorProfiles[0];
       const doctorName = doctorProfile?.name || 'Doctor';
       const department = doctorProfile?.department || 'Emergency';
 
+      // Use onboarding@resend.dev which is pre-verified for all Resend accounts
       const emailResponse = await resend.emails.send({
         from: "MediAid Emergency <onboarding@resend.dev>",
         to: [testDoctorEmail],
@@ -135,21 +136,55 @@ serve(async (req: Request) => {
               </div>
             </div>
           </div>
-        `
+        `,
+        headers: {
+          'X-Priority': '1',
+          'X-MSMail-Priority': 'High',
+          'Importance': 'high'
+        }
       });
+
+      console.log('📧 Email send response:', emailResponse);
 
       if (emailResponse.error) {
         console.error(`❌ Failed to send email:`, emailResponse.error);
         failedNotifications++;
+        
+        return new Response(
+          JSON.stringify({ 
+            success: false, 
+            error: `Email send failed: ${emailResponse.error.message}`,
+            notificationsSent: 0,
+            doctorEmailsSent: []
+          }),
+          { 
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            status: 500 
+          }
+        );
       } else {
         console.log(`✅ Emergency email sent successfully to ${testDoctorEmail}`);
+        console.log(`📧 Email ID: ${emailResponse.data?.id}`);
         successfulNotifications++;
         doctorEmailsSent.push(testDoctorEmail);
       }
 
-    } catch (error) {
-      console.error(`❌ Error sending email:`, error);
+    } catch (emailError) {
+      console.error(`❌ Error sending email:`, emailError);
       failedNotifications++;
+      
+      return new Response(
+        JSON.stringify({ 
+          success: false, 
+          error: `Email sending error: ${emailError.message}`,
+          notificationsSent: 0,
+          doctorEmailsSent: []
+        }),
+        { 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 500 
+        }
+      );
     }
 
     const responseData = { 
