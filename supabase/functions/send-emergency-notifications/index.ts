@@ -26,6 +26,12 @@ serve(async (req: Request) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  console.log('🚨 Emergency notification function called');
+  console.log('📋 Environment check:');
+  console.log('- SUPABASE_URL:', Deno.env.get('SUPABASE_URL') ? '✅ Set' : '❌ Missing');
+  console.log('- SUPABASE_SERVICE_ROLE_KEY:', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ? '✅ Set' : '❌ Missing');
+  console.log('- RESEND_API_KEY:', Deno.env.get('RESEND_API_KEY') ? '✅ Set' : '❌ Missing');
+
   try {
     const { emergencyId, patientName, location, condition, priority = 'high' }: EmergencyNotificationRequest = await req.json();
 
@@ -34,12 +40,11 @@ serve(async (req: Request) => {
     // Check if RESEND_API_KEY is configured
     const resendApiKey = Deno.env.get('RESEND_API_KEY');
     if (!resendApiKey) {
-      console.error('❌ RESEND_API_KEY not found in environment variables');
-      console.log('📋 Available environment variables:', Object.keys(Deno.env.toObject()));
+      console.error('❌ RESEND_API_KEY not found');
       return new Response(
         JSON.stringify({ 
           success: false, 
-          error: 'RESEND_API_KEY not configured. Please add it in Supabase Edge Functions settings and redeploy the function.',
+          error: 'RESEND_API_KEY not configured. Please check Supabase Edge Function secrets.',
           notificationsSent: 0,
           doctorEmailsSent: []
         }),
@@ -50,10 +55,31 @@ serve(async (req: Request) => {
       );
     }
 
-    console.log('✅ RESEND_API_KEY found, initializing Resend...');
-    const resend = new Resend(resendApiKey);
+    console.log('✅ RESEND_API_KEY found, length:', resendApiKey.length);
+    
+    // Initialize Resend with proper error handling
+    let resend;
+    try {
+      resend = new Resend(resendApiKey);
+      console.log('✅ Resend client initialized successfully');
+    } catch (resendInitError) {
+      console.error('❌ Failed to initialize Resend client:', resendInitError);
+      return new Response(
+        JSON.stringify({ 
+          success: false, 
+          error: 'Failed to initialize email service',
+          notificationsSent: 0,
+          doctorEmailsSent: []
+        }),
+        { 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 500 
+        }
+      );
+    }
 
-    // Get doctor profiles with email addresses from profiles table
+    // Get doctor profiles
+    console.log('👨‍⚕️ Fetching doctor profiles...');
     const { data: doctorProfiles, error: doctorError } = await supabase
       .from('profiles')
       .select('user_id, name, department')
@@ -61,17 +87,28 @@ serve(async (req: Request) => {
 
     if (doctorError) {
       console.error('❌ Error fetching doctor profiles:', doctorError);
-      throw doctorError;
+      return new Response(
+        JSON.stringify({ 
+          success: false, 
+          error: 'Failed to fetch doctor profiles',
+          notificationsSent: 0,
+          doctorEmailsSent: []
+        }),
+        { 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 500 
+        }
+      );
     }
 
-    console.log(`👨‍⚕️ Found ${doctorProfiles?.length || 0} doctor profiles`);
+    console.log(`👨‍⚕️ Found ${doctorProfiles?.length || 0} doctor profiles:`, doctorProfiles);
 
     if (!doctorProfiles || doctorProfiles.length === 0) {
       console.log('⚠️ No doctor profiles found');
       return new Response(
         JSON.stringify({ 
           success: true, 
-          message: 'No doctor profiles found. Please create users with doctor role first.', 
+          message: 'No doctor profiles found. Please create doctor accounts first.', 
           notificationsSent: 0,
           doctorEmailsSent: []
         }),
@@ -82,22 +119,17 @@ serve(async (req: Request) => {
       );
     }
 
-    // For demo purposes, send to the configured test email
-    const testDoctorEmail = "abcdwxyz6712@gmail.com"; 
+    // Send email to test doctor email for demo
+    const testDoctorEmail = "abcdwxyz6712@gmail.com";
+    console.log(`📧 Sending emergency email to test doctor: ${testDoctorEmail}...`);
     
-    let successfulNotifications = 0;
-    let failedNotifications = 0;
-    let doctorEmailsSent = [];
+    const doctorProfile = doctorProfiles[0];
+    const doctorName = doctorProfile?.name || 'Doctor';
+    const department = doctorProfile?.department || 'Emergency';
 
+    let emailResponse;
     try {
-      console.log(`📧 Sending emergency email to ${testDoctorEmail}...`);
-      
-      const doctorProfile = doctorProfiles[0];
-      const doctorName = doctorProfile?.name || 'Doctor';
-      const department = doctorProfile?.department || 'Emergency';
-
-      // Send high-priority emergency email
-      const emailResponse = await resend.emails.send({
+      emailResponse = await resend.emails.send({
         from: "MediAid Emergency <onboarding@resend.dev>",
         to: [testDoctorEmail],
         subject: `🚨 EMERGENCY ALERT - ${location.toUpperCase()}`,
@@ -147,37 +179,12 @@ serve(async (req: Request) => {
 
       console.log('📧 Email send response:', emailResponse);
 
-      if (emailResponse.error) {
-        console.error(`❌ Failed to send email:`, emailResponse.error);
-        failedNotifications++;
-        
-        return new Response(
-          JSON.stringify({ 
-            success: false, 
-            error: `Email send failed: ${emailResponse.error.message}`,
-            notificationsSent: 0,
-            doctorEmailsSent: []
-          }),
-          { 
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            status: 500 
-          }
-        );
-      } else {
-        console.log(`✅ Emergency email sent successfully to ${testDoctorEmail}`);
-        console.log(`📧 Email ID: ${emailResponse.data?.id}`);
-        successfulNotifications++;
-        doctorEmailsSent.push(testDoctorEmail);
-      }
-
     } catch (emailError) {
-      console.error(`❌ Error sending email:`, emailError);
-      failedNotifications++;
-      
+      console.error('❌ Error sending email:', emailError);
       return new Response(
         JSON.stringify({ 
           success: false, 
-          error: `Email sending error: ${emailError.message}`,
+          error: `Email sending failed: ${emailError.message}`,
           notificationsSent: 0,
           doctorEmailsSent: []
         }),
@@ -188,15 +195,33 @@ serve(async (req: Request) => {
       );
     }
 
+    if (emailResponse.error) {
+      console.error('❌ Resend API error:', emailResponse.error);
+      return new Response(
+        JSON.stringify({ 
+          success: false, 
+          error: `Resend API error: ${emailResponse.error.message}`,
+          notificationsSent: 0,
+          doctorEmailsSent: []
+        }),
+        { 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 500 
+        }
+      );
+    }
+
+    console.log(`✅ Emergency email sent successfully to ${testDoctorEmail}`);
+    console.log(`📧 Email ID: ${emailResponse.data?.id}`);
+
     const responseData = { 
       success: true, 
-      notificationsSent: successfulNotifications,
-      notificationsFailed: failedNotifications,
+      notificationsSent: 1,
+      notificationsFailed: 0,
       totalDoctors: doctorProfiles.length,
-      doctorEmailsSent: doctorEmailsSent,
-      message: successfulNotifications > 0 
-        ? `Emergency alert sent to ${successfulNotifications} doctors via email`
-        : `No emails sent - ${failedNotifications} failed attempts. Please check RESEND_API_KEY configuration.`
+      doctorEmailsSent: [testDoctorEmail],
+      emailId: emailResponse.data?.id,
+      message: `Emergency alert sent successfully to ${testDoctorEmail}`
     };
 
     console.log('📊 Emergency notification summary:', responseData);
@@ -209,14 +234,14 @@ serve(async (req: Request) => {
       }
     );
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('❌ Error in send-emergency-notifications function:', error);
     return new Response(
       JSON.stringify({ 
         error: error.message,
         success: false,
         notificationsSent: 0,
-        details: 'Emergency notification system error. Check function logs for more details.'
+        details: 'Emergency notification system error'
       }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

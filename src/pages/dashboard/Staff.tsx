@@ -498,49 +498,67 @@ const StaffDashboard = () => {
 
       console.log('✅ Emergency created:', emergency);
 
-      // Send notifications to doctors
+      // Send notifications to doctors with better error handling
       console.log('📧 Sending emergency notifications...');
-      const { data: notificationResult, error: notificationError } = await supabase.functions.invoke(
-        'send-emergency-notifications',
-        {
-          body: {
-            emergencyId: emergency.id,
-            patientName: formData.patient_name,
-            location: formData.location,
-            condition: formData.condition,
-            priority: 'high'
+      
+      try {
+        const { data: notificationResult, error: notificationError } = await supabase.functions.invoke(
+          'send-emergency-notifications',
+          {
+            body: {
+              emergencyId: emergency.id,
+              patientName: formData.patient_name,
+              location: formData.location,
+              condition: formData.condition,
+              priority: 'high'
+            }
           }
-        }
-      );
+        );
 
-      console.log('📧 Notification result:', notificationResult);
+        console.log('📧 Notification result:', notificationResult);
+        console.log('📧 Notification error:', notificationError);
 
-      if (notificationError) {
-        console.error('❌ Error sending notifications:', notificationError);
-        toast({
-          title: "Emergency Created",
-          description: "Emergency alert created but failed to send notifications. Please check your setup.",
-          variant: "destructive"
-        });
-      } else {
-        if (notificationResult.notificationsSent > 0) {
+        if (notificationError) {
+          console.error('❌ Edge Function invocation error:', notificationError);
+          toast({
+            title: "Emergency Created",
+            description: `Emergency alert created but failed to send notifications: ${notificationError.message}`,
+            variant: "destructive"
+          });
+        } else if (notificationResult && notificationResult.success) {
+          const emailsSent = notificationResult.notificationsSent || 0;
           const emailList = notificationResult.doctorEmailsSent?.slice(0, 2).join(', ') || '';
-          const moreCount = (notificationResult.doctorEmailsSent?.length || 0) - 2;
           
           toast({
-            title: "Emergency Alert Sent Successfully",
-            description: `Emergency alert sent to ${notificationResult.notificationsSent} doctors${emailList ? `: ${emailList}` : ''}${moreCount > 0 ? ` and ${moreCount} more` : ''}`,
+            title: "🚨 Emergency Alert Sent Successfully!",
+            description: `Emergency alert sent to ${emailsSent} doctor${emailsSent > 1 ? 's' : ''}${emailList ? `: ${emailList}` : ''}`,
+          });
+
+          showNotification("Emergency Alert Sent", `Emergency alert sent for patient at ${formData.location}`);
+        } else if (notificationResult && !notificationResult.success) {
+          console.error('❌ Function returned error:', notificationResult.error);
+          toast({
+            title: "Emergency Created",
+            description: `Emergency alert created but notification failed: ${notificationResult.error}`,
+            variant: "destructive"
           });
         } else {
+          console.error('❌ Unexpected response:', notificationResult);
           toast({
-            title: "No Doctors Available",
-            description: notificationResult.message || "No doctor profiles found to send alerts to. Please create doctor accounts first.",
+            title: "Emergency Created",
+            description: "Emergency alert created but notification status unknown. Check function logs.",
             variant: "destructive"
           });
         }
-      }
 
-      showNotification("Emergency Alert Triggered", `Emergency alert sent for patient at ${formData.location}`);
+      } catch (invokeError) {
+        console.error('❌ Function invoke error:', invokeError);
+        toast({
+          title: "Emergency Created",
+          description: `Emergency alert created but failed to invoke notification function: ${invokeError.message}`,
+          variant: "destructive"
+        });
+      }
 
       setFormData({
         patient_id: "",
@@ -554,7 +572,7 @@ const StaffDashboard = () => {
       console.error('❌ Error creating emergency:', error);
       toast({
         title: "Error",
-        description: "Failed to send emergency alert. Please try again.",
+        description: `Failed to create emergency alert: ${error.message}`,
         variant: "destructive"
       });
     } finally {
