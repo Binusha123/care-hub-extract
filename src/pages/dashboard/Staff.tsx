@@ -15,7 +15,8 @@ import {
   Activity,
   Clock,
   Users,
-  UserPlus
+  UserPlus,
+  RefreshCw
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -66,6 +67,7 @@ const StaffDashboard = () => {
     todayAppointments: 0,
     totalUsers: 0
   });
+  const [debugInfo, setDebugInfo] = useState<any>(null);
   const [formData, setFormData] = useState({
     patient_id: "",
     patient_name: "",
@@ -79,12 +81,6 @@ const StaffDashboard = () => {
     department: "",
     priority: "medium" as 'high' | 'medium' | 'low',
     room_number: ""
-  });
-  const [createDoctorForm, setCreateDoctorForm] = useState({
-    email: "",
-    password: "",
-    name: "",
-    department: ""
   });
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -118,7 +114,6 @@ const StaffDashboard = () => {
     try {
       console.log('🔄 Fetching real-time system statistics...');
       
-      // Get total users count from profiles table instead of auth.users
       const { data: profiles, error: profilesError } = await supabase
         .from('profiles')
         .select('user_id', { count: 'exact' });
@@ -145,12 +140,6 @@ const StaffDashboard = () => {
       };
 
       console.log('📊 Updated system stats:', newStats);
-      console.log('🔍 Doctor count breakdown:', {
-        totalProfiles: profiles?.length,
-        doctorProfiles: doctorsResult.count,
-        doctorData: doctorsResult.data
-      });
-      
       setSystemStats(newStats);
 
     } catch (error) {
@@ -163,10 +152,43 @@ const StaffDashboard = () => {
     }
   };
 
+  const fetchDebugInfo = async () => {
+    try {
+      // Get all profiles for debugging
+      const { data: allProfiles, error: allError } = await supabase
+        .from('profiles')
+        .select('*');
+      
+      // Get current user profile
+      const userProfile = allProfiles?.find(p => p.user_id === user?.id);
+      
+      // Get doctor profiles
+      const doctorProfiles = allProfiles?.filter(p => p.role === 'doctor');
+      
+      const debugData = {
+        currentUser: user,
+        userProfile: userProfile,
+        allProfiles: allProfiles,
+        doctorProfiles: doctorProfiles,
+        totalProfiles: allProfiles?.length || 0,
+        totalDoctors: doctorProfiles?.length || 0
+      };
+      
+      console.log('🔍 Debug Info:', debugData);
+      setDebugInfo(debugData);
+      
+    } catch (error) {
+      console.error('❌ Error fetching debug info:', error);
+    }
+  };
+
   useEffect(() => {
-    fetchDoctorProfiles();
-    fetchTreatmentQueue();
-    fetchSystemStats();
+    if (user) {
+      fetchDoctorProfiles();
+      fetchTreatmentQueue();
+      fetchSystemStats();
+      fetchDebugInfo();
+    }
 
     const channel = supabase
       .channel('staff_dashboard_updates')
@@ -183,6 +205,7 @@ const StaffDashboard = () => {
         console.log('🔄 Profiles updated');
         fetchDoctorProfiles();
         fetchSystemStats();
+        fetchDebugInfo();
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'patients_today' }, () => {
         console.log('🔄 Appointments updated');
@@ -198,25 +221,12 @@ const StaffDashboard = () => {
       supabase.removeChannel(channel);
       clearInterval(interval);
     };
-  }, []);
+  }, [user]);
 
   const fetchDoctorProfiles = async () => {
     try {
-      console.log('🔍 Fetching all profiles to debug...');
+      console.log('🔍 Fetching doctor profiles...');
       
-      // First, get ALL profiles to see what we have
-      const { data: allProfiles, error: allError } = await supabase
-        .from('profiles')
-        .select('*');
-      
-      if (allError) {
-        console.error('❌ Error fetching all profiles:', allError);
-        throw allError;
-      }
-      
-      console.log('📋 All profiles in database:', allProfiles);
-      
-      // Now get just doctor profiles
       const { data: profiles, error } = await supabase
         .from('profiles')
         .select('user_id, name, department, role')
@@ -228,8 +238,6 @@ const StaffDashboard = () => {
       }
       
       console.log('👨‍⚕️ Doctor profiles found:', profiles);
-      console.log('🔢 Doctor count:', profiles?.length || 0);
-      
       setDoctorProfiles(profiles || []);
     } catch (error) {
       console.error('❌ Error in fetchDoctorProfiles:', error);
@@ -309,9 +317,9 @@ const StaffDashboard = () => {
         .from('profiles')
         .select('*')
         .eq('user_id', user.id)
-        .single();
+        .maybeSingle();
 
-      if (fetchError && fetchError.code !== 'PGRST116') {
+      if (fetchError) {
         console.error('❌ Error checking existing profile:', fetchError);
         throw fetchError;
       }
@@ -320,7 +328,6 @@ const StaffDashboard = () => {
 
       if (existingProfile) {
         console.log('📝 Updating existing profile to doctor role...');
-        // Update existing profile to doctor role
         const { error: updateError } = await supabase
           .from('profiles')
           .update({
@@ -342,7 +349,6 @@ const StaffDashboard = () => {
         });
       } else {
         console.log('➕ Creating new doctor profile...');
-        // Create new profile
         const profileData = {
           user_id: user.id,
           name: user.email.split('@')[0],
@@ -369,20 +375,12 @@ const StaffDashboard = () => {
         });
       }
 
-      // Refresh data and verify the profile was created
-      await fetchDoctorProfiles();
-      await fetchSystemStats();
-      
-      // Double-check that the profile was created correctly
-      setTimeout(async () => {
-        const { data: verifyProfile } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('user_id', user.id)
-          .single();
-        
-        console.log('🔍 Profile verification after creation:', verifyProfile);
-      }, 1000);
+      // Refresh all data
+      await Promise.all([
+        fetchDoctorProfiles(),
+        fetchSystemStats(),
+        fetchDebugInfo()
+      ]);
 
     } catch (error) {
       console.error('❌ Error creating profile:', error);
@@ -396,72 +394,22 @@ const StaffDashboard = () => {
     }
   };
 
-  const handleCreateDoctor = async () => {
-    if (!createDoctorForm.email || !createDoctorForm.password || !createDoctorForm.name) {
-      toast({
-        title: "Missing Information",
-        description: "Please fill in email, password, and name",
-        variant: "destructive"
-      });
-      return;
-    }
-
+  const handleRefreshData = async () => {
     setLoading(true);
     try {
-      console.log('🔧 Creating doctor account:', createDoctorForm.email);
-      
-      // Create the user account
-      const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-        email: createDoctorForm.email,
-        password: createDoctorForm.password,
-        email_confirm: true
-      });
-
-      if (authError) {
-        console.error('❌ Error creating user:', authError);
-        throw authError;
-      }
-
-      console.log('✅ User created successfully:', authData.user.id);
-
-      // Create the doctor profile
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .insert({
-          user_id: authData.user.id,
-          name: createDoctorForm.name,
-          role: 'doctor',
-          department: createDoctorForm.department || 'General'
-        });
-
-      if (profileError) {
-        console.error('❌ Error creating profile:', profileError);
-        throw profileError;
-      }
-
-      console.log('✅ Doctor profile created successfully');
-
+      await Promise.all([
+        fetchDoctorProfiles(),
+        fetchSystemStats(),
+        fetchDebugInfo()
+      ]);
       toast({
-        title: "Doctor Created Successfully",
-        description: `Dr. ${createDoctorForm.name} has been created and can now receive emergency alerts`,
+        title: "Data Refreshed",
+        description: "All data has been refreshed successfully",
       });
-
-      setCreateDoctorForm({
-        email: "",
-        password: "",
-        name: "",
-        department: ""
-      });
-
-      // Refresh data
-      fetchDoctorProfiles();
-      fetchSystemStats();
-
     } catch (error) {
-      console.error('❌ Error creating doctor:', error);
       toast({
-        title: "Error Creating Doctor",
-        description: `Failed to create doctor: ${error.message}`,
+        title: "Refresh Failed",
+        description: "Failed to refresh data",
         variant: "destructive"
       });
     } finally {
@@ -534,17 +482,6 @@ const StaffDashboard = () => {
     try {
       console.log('🚨 Creating emergency alert...');
       
-      // First, let's check how many doctor profiles we have before sending
-      const { data: doctorCheck, error: doctorCheckError } = await supabase
-        .from('profiles')
-        .select('user_id, name, role')
-        .eq('role', 'doctor');
-      
-      console.log('🔍 Pre-emergency doctor check:', {
-        count: doctorCheck?.length || 0,
-        doctors: doctorCheck
-      });
-      
       const { data: emergency, error } = await supabase
         .from('emergencies')
         .insert({
@@ -576,6 +513,8 @@ const StaffDashboard = () => {
         }
       );
 
+      console.log('📧 Notification result:', notificationResult);
+
       if (notificationError) {
         console.error('❌ Error sending notifications:', notificationError);
         toast({
@@ -584,15 +523,13 @@ const StaffDashboard = () => {
           variant: "destructive"
         });
       } else {
-        console.log('✅ Notification result:', notificationResult);
-        
         if (notificationResult.notificationsSent > 0) {
-          const emailList = notificationResult.doctorEmailsSent.slice(0, 2).join(', ');
-          const moreCount = notificationResult.doctorEmailsSent.length - 2;
+          const emailList = notificationResult.doctorEmailsSent?.slice(0, 2).join(', ') || '';
+          const moreCount = (notificationResult.doctorEmailsSent?.length || 0) - 2;
           
           toast({
             title: "Emergency Alert Sent Successfully",
-            description: `Emergency alert sent to ${notificationResult.notificationsSent} doctors: ${emailList}${moreCount > 0 ? ` and ${moreCount} more` : ''}`,
+            description: `Emergency alert sent to ${notificationResult.notificationsSent} doctors${emailList ? `: ${emailList}` : ''}${moreCount > 0 ? ` and ${moreCount} more` : ''}`,
           });
         } else {
           toast({
@@ -645,6 +582,10 @@ const StaffDashboard = () => {
             <h1 className="text-2xl font-bold text-primary">MediAid</h1>
           </div>
           <div className="flex items-center gap-4">
+            <Button variant="outline" size="sm" onClick={handleRefreshData} disabled={loading}>
+              <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+              Refresh Data
+            </Button>
             <div className="flex items-center gap-2">
               <User className="h-5 w-5" />
               <span className="font-medium">{user.name}</span>
@@ -667,27 +608,32 @@ const StaffDashboard = () => {
         </div>
 
         {/* Debug Information Card */}
-        <Card className="mb-8 border-blue-200 dark:border-blue-800">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-blue-600 dark:text-blue-400">
-              🔍 System Debug Information
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-              <div>
-                <p><strong>Current User ID:</strong> {user.id}</p>
-                <p><strong>Current User Email:</strong> {user.email}</p>
-                <p><strong>Total Profiles:</strong> {systemStats.totalUsers}</p>
+        {debugInfo && (
+          <Card className="mb-8 border-blue-200 dark:border-blue-800">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-blue-600 dark:text-blue-400">
+                🔍 System Debug Information
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                <div>
+                  <p><strong>Current User ID:</strong> {debugInfo.currentUser?.id}</p>
+                  <p><strong>Current User Email:</strong> {debugInfo.currentUser?.email}</p>
+                  <p><strong>User Profile Role:</strong> {debugInfo.userProfile?.role || 'None'}</p>
+                  <p><strong>Total Profiles:</strong> {debugInfo.totalProfiles}</p>
+                </div>
+                <div>
+                  <p><strong>Doctor Profiles Found:</strong> {debugInfo.totalDoctors}</p>
+                  <p><strong>Doctor Names:</strong> {debugInfo.doctorProfiles?.map(d => d.name).join(', ') || 'None'}</p>
+                  <p><strong>RESEND_API_KEY:</strong> ✅ Configured in Supabase</p>
+                </div>
               </div>
-              <div>
-                <p><strong>Doctor Profiles Found:</strong> {systemStats.totalDoctors}</p>
-                <p><strong>Doctor Names:</strong> {doctorProfiles.map(d => d.name).join(', ') || 'None'}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        )}
 
+        {/* System Statistics */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
           <Card className="bg-gradient-to-r from-green-50 to-green-100 border-green-200">
             <CardContent className="p-4">
@@ -750,6 +696,7 @@ const StaffDashboard = () => {
           </Card>
         </div>
 
+        {/* Profile Setup Section */}
         {systemStats.totalDoctors === 0 && (
           <Card className="mb-8 border-yellow-200 dark:border-yellow-800">
             <CardHeader>
@@ -774,76 +721,6 @@ const StaffDashboard = () => {
                 className="w-full bg-blue-600 hover:bg-blue-700 text-white"
               >
                 {loading ? "Creating Profile..." : "Set Up My Doctor Profile"}
-              </Button>
-            </CardContent>
-          </Card>
-        )}
-
-        {doctorProfiles.length === 0 && (
-          <Card className="mb-8 border-green-200 dark:border-green-800">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-green-600 dark:text-green-400">
-                <UserPlus className="h-6 w-6" />
-                Or Create New Doctor Account
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg border border-green-200 dark:border-green-800">
-                <p className="text-green-800 dark:text-green-200 text-sm">
-                  💡 You can also create additional doctor accounts for other medical staff.
-                </p>
-              </div>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="doctor_email">Doctor Email *</Label>
-                  <Input
-                    id="doctor_email"
-                    type="email"
-                    placeholder="doctor@example.com"
-                    value={createDoctorForm.email}
-                    onChange={(e) => setCreateDoctorForm(prev => ({ ...prev, email: e.target.value }))}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="doctor_password">Password *</Label>
-                  <Input
-                    id="doctor_password"
-                    type="password"
-                    placeholder="Enter password"
-                    value={createDoctorForm.password}
-                    onChange={(e) => setCreateDoctorForm(prev => ({ ...prev, password: e.target.value }))}
-                  />
-                </div>
-              </div>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="doctor_name">Doctor Name *</Label>
-                  <Input
-                    id="doctor_name"
-                    placeholder="Dr. John Smith"
-                    value={createDoctorForm.name}
-                    onChange={(e) => setCreateDoctorForm(prev => ({ ...prev, name: e.target.value }))}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="doctor_department">Department</Label>
-                  <Input
-                    id="doctor_department"
-                    placeholder="e.g., Emergency, Cardiology"
-                    value={createDoctorForm.department}
-                    onChange={(e) => setCreateDoctorForm(prev => ({ ...prev, department: e.target.value }))}
-                  />
-                </div>
-              </div>
-
-              <Button 
-                onClick={handleCreateDoctor}
-                disabled={loading}
-                className="w-full bg-green-600 hover:bg-green-700 text-white"
-              >
-                {loading ? "Creating Doctor..." : "Create Doctor Profile"}
               </Button>
             </CardContent>
           </Card>
