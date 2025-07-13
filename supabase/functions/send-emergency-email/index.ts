@@ -32,10 +32,11 @@ serve(async (req: Request) => {
     const resendApiKey = Deno.env.get('RESEND_API_KEY');
     
     if (!resendApiKey) {
-      console.error('❌ RESEND_API_KEY not configured');
+      console.error('❌ RESEND_API_KEY not found in environment variables');
+      console.log('📋 Available environment variables:', Object.keys(Deno.env.toObject()));
       return new Response(JSON.stringify({ 
         success: false, 
-        error: 'RESEND_API_KEY not configured. Please add it in Supabase Edge Functions settings.' 
+        error: 'RESEND_API_KEY not configured. Please add it in Supabase Edge Functions settings and redeploy the function.' 
       }), {
         status: 500,
         headers: { "Content-Type": "application/json", ...corsHeaders },

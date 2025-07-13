@@ -34,11 +34,12 @@ serve(async (req: Request) => {
     // Check if RESEND_API_KEY is configured
     const resendApiKey = Deno.env.get('RESEND_API_KEY');
     if (!resendApiKey) {
-      console.error('❌ RESEND_API_KEY not configured');
+      console.error('❌ RESEND_API_KEY not found in environment variables');
+      console.log('📋 Available environment variables:', Object.keys(Deno.env.toObject()));
       return new Response(
         JSON.stringify({ 
           success: false, 
-          error: 'RESEND_API_KEY not configured. Please add it in Supabase Edge Functions settings.',
+          error: 'RESEND_API_KEY not configured. Please add it in Supabase Edge Functions settings and redeploy the function.',
           notificationsSent: 0,
           doctorEmailsSent: []
         }),
@@ -81,7 +82,7 @@ serve(async (req: Request) => {
       );
     }
 
-    // Use the logged-in doctor's email for demo purposes
+    // For demo purposes, send to the configured test email
     const testDoctorEmail = "abcdwxyz6712@gmail.com"; 
     
     let successfulNotifications = 0;
@@ -95,7 +96,7 @@ serve(async (req: Request) => {
       const doctorName = doctorProfile?.name || 'Doctor';
       const department = doctorProfile?.department || 'Emergency';
 
-      // Use onboarding@resend.dev which is pre-verified for all Resend accounts
+      // Send high-priority emergency email
       const emailResponse = await resend.emails.send({
         from: "MediAid Emergency <onboarding@resend.dev>",
         to: [testDoctorEmail],
