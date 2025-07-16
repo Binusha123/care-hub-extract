@@ -98,8 +98,24 @@ serve(async (req: Request) => {
       );
     }
 
-    // Initialize Resend with API key
-    const resendApiKey = 're_QUfoMrfX_7NiLqdTmG6qs7oLV6h8tWQ5m';
+    // Initialize Resend with API key from environment
+    const resendApiKey = Deno.env.get('RESEND_API_KEY');
+    
+    if (!resendApiKey) {
+      console.error('❌ RESEND_API_KEY not found in environment variables');
+      return new Response(
+        JSON.stringify({ 
+          success: false, 
+          error: 'Email service not configured. RESEND_API_KEY missing.'
+        }),
+        { 
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        }
+      );
+    }
+
+    console.log('✅ RESEND_API_KEY found, initializing Resend...');
     const resend = new Resend(resendApiKey);
     
     console.log('📧 Sending actual emergency emails using Resend...');
