@@ -98,9 +98,11 @@ serve(async (req: Request) => {
       );
     }
 
-    // For demo purposes, simulate successful email sending
-    // The actual error is: Resend requires domain verification to send to external emails
-    console.log('📧 Simulating email notifications (bypassing Resend domain restrictions)...');
+    // Initialize Resend with API key
+    const resendApiKey = 're_QUfoMrfX_7NiLqdTmG6qs7oLV6h8tWQ5m';
+    const resend = new Resend(resendApiKey);
+    
+    console.log('📧 Sending actual emergency emails using Resend...');
     
     const emailResults = [];
     
@@ -108,17 +110,71 @@ serve(async (req: Request) => {
       const doctorEmail = doctorEmails[i];
       const doctorName = doctorNames[i];
       
-      console.log(`📧 ✅ Successfully simulated email to ${doctorName} (${doctorEmail})`);
-      console.log(`📧 Subject: 🚨 EMERGENCY ALERT - ${condition.toUpperCase()}`);
-      console.log(`📧 Content: Patient: ${patientName}, Location: ${location}, Condition: ${condition}`);
-      
-      // Simulate successful sending
-      emailResults.push({ 
-        email: doctorEmail, 
-        success: true, 
-        emailId: `demo_${Date.now()}_${i}`,
-        note: 'Email simulated successfully - Resend domain verification required for actual sending'
-      });
+      try {
+        console.log(`📧 Sending emergency email to ${doctorName} (${doctorEmail})`);
+        
+        const emailResponse = await resend.emails.send({
+          from: "MediAid Emergency <onboarding@resend.dev>",
+          to: [doctorEmail],
+          subject: `🚨 EMERGENCY ALERT - ${condition.toUpperCase()}`,
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #fff; border: 2px solid #dc2626;">
+              <h1 style="color: #dc2626; text-align: center; margin-bottom: 30px;">🚨 EMERGENCY ALERT</h1>
+              
+              <div style="background-color: #fef2f2; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                <h2 style="color: #dc2626; margin-top: 0;">Emergency Details</h2>
+                <p><strong>Patient:</strong> ${patientName || 'Unknown'}</p>
+                <p><strong>Location:</strong> ${location}</p>
+                <p><strong>Condition:</strong> ${condition}</p>
+                <p><strong>Priority:</strong> ${priority.toUpperCase()}</p>
+                <p><strong>Emergency ID:</strong> ${emergencyId}</p>
+                <p><strong>Time:</strong> ${new Date().toLocaleString()}</p>
+              </div>
+              
+              <div style="background-color: #f3f4f6; padding: 15px; border-radius: 8px;">
+                <p style="margin: 0; color: #374151;">
+                  <strong>Dr. ${doctorName},</strong><br>
+                  Immediate medical attention is required. Please respond as soon as possible.
+                </p>
+              </div>
+              
+              <div style="text-align: center; margin-top: 30px;">
+                <p style="color: #6b7280; font-size: 14px;">
+                  This is an automated emergency notification from MediAid Hospital Management System.
+                </p>
+              </div>
+            </div>
+          `,
+          headers: {
+            'X-Priority': '1',
+            'X-MSMail-Priority': 'High',
+            'Importance': 'high'
+          }
+        });
+
+        if (emailResponse.error) {
+          console.error(`❌ Error sending email to ${doctorEmail}:`, emailResponse.error);
+          emailResults.push({ 
+            email: doctorEmail, 
+            success: false, 
+            error: emailResponse.error.message 
+          });
+        } else {
+          console.log(`✅ Email sent successfully to ${doctorEmail}:`, emailResponse.data);
+          emailResults.push({ 
+            email: doctorEmail, 
+            success: true, 
+            emailId: emailResponse.data?.id 
+          });
+        }
+      } catch (error) {
+        console.error(`❌ Exception sending email to ${doctorEmail}:`, error);
+        emailResults.push({ 
+          email: doctorEmail, 
+          success: false, 
+          error: error.message 
+        });
+      }
     }
 
     const successfulEmails = emailResults.filter(result => result.success);
