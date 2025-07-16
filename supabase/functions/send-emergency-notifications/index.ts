@@ -122,20 +122,31 @@ serve(async (req: Request) => {
     
     const emailResults = [];
     
+    // For testing, only send to verified email address
+    const verifiedTestEmail = "kothavivek55@gmail.com";
+    console.log('⚠️ Testing mode: Only sending to verified email address for demo');
+    
     for (let i = 0; i < doctorEmails.length; i++) {
       const doctorEmail = doctorEmails[i];
       const doctorName = doctorNames[i];
       
       try {
-        console.log(`📧 Sending emergency email to ${doctorName} (${doctorEmail})`);
+        console.log(`📧 Sending emergency email to ${doctorName} (${verifiedTestEmail} - forwarded from ${doctorEmail})`);
         
         const emailResponse = await resend.emails.send({
           from: "MediAid Emergency <onboarding@resend.dev>",
-          to: [doctorEmail],
-          subject: `🚨 EMERGENCY ALERT - ${condition.toUpperCase()}`,
+          to: [verifiedTestEmail], // Send to verified email for testing
+          subject: `🚨 EMERGENCY ALERT - ${condition.toUpperCase()} [Forwarded for Dr. ${doctorName}]`,
           html: `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #fff; border: 2px solid #dc2626;">
               <h1 style="color: #dc2626; text-align: center; margin-bottom: 30px;">🚨 EMERGENCY ALERT</h1>
+              
+              <div style="background-color: #fff3cd; padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #ffeaa7;">
+                <p style="margin: 0; color: #856404; font-weight: bold;">
+                  📧 This email is being sent to your verified address for testing purposes.<br>
+                  In production, this would be sent to: <strong>${doctorEmail}</strong>
+                </p>
+              </div>
               
               <div style="background-color: #fef2f2; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
                 <h2 style="color: #dc2626; margin-top: 0;">Emergency Details</h2>
@@ -176,11 +187,12 @@ serve(async (req: Request) => {
             error: emailResponse.error.message 
           });
         } else {
-          console.log(`✅ Email sent successfully to ${doctorEmail}:`, emailResponse.data);
+          console.log(`✅ Email sent successfully to ${verifiedTestEmail} (for ${doctorEmail}):`, emailResponse.data);
           emailResults.push({ 
             email: doctorEmail, 
             success: true, 
-            emailId: emailResponse.data?.id 
+            emailId: emailResponse.data?.id,
+            note: `Sent to ${verifiedTestEmail} for testing - would be sent to ${doctorEmail} in production`
           });
         }
       } catch (error) {
@@ -190,6 +202,12 @@ serve(async (req: Request) => {
           success: false, 
           error: error.message 
         });
+      }
+      
+      // Add delay between requests to avoid rate limiting
+      if (i < doctorEmails.length - 1) {
+        console.log('⏰ Waiting 1 second to avoid rate limiting...');
+        await new Promise(resolve => setTimeout(resolve, 1000));
       }
     }
 
