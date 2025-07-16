@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.50.3';
+import { Resend } from "npm:resend@2.0.0";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -97,20 +98,115 @@ serve(async (req: Request) => {
       );
     }
 
-    console.log('📧 Simulating emergency email notifications to:', doctorEmails);
+    // Initialize Resend for actual email sending
+    const resendApiKey = Deno.env.get('RESEND_API_KEY');
     
-    // For now, simulate sending emails (replace with actual email service when configured)
-    // This is where you would integrate with Resend, SendGrid, etc.
+    if (!resendApiKey) {
+      console.error('❌ RESEND_API_KEY not found');
+      return new Response(
+        JSON.stringify({ 
+          success: false, 
+          error: 'Email service not configured. RESEND_API_KEY missing.'
+        }),
+        { 
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        }
+      );
+    }
+
+    console.log('✅ RESEND_API_KEY found, sending actual emails...');
+    const resend = new Resend(resendApiKey);
+
+    // Send actual emails to all doctors
+    const emailResults = [];
+    
+    for (let i = 0; i < doctorEmails.length; i++) {
+      const doctorEmail = doctorEmails[i];
+      const doctorName = doctorNames[i];
+      
+      try {
+        console.log(`📧 Sending emergency email to ${doctorName} (${doctorEmail})`);
+        
+        const emailResponse = await resend.emails.send({
+          from: "MediAid Emergency <onboarding@resend.dev>",
+          to: [doctorEmail],
+          subject: `🚨 EMERGENCY ALERT - ${condition.toUpperCase()}`,
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #fff; border: 2px solid #dc2626;">
+              <h1 style="color: #dc2626; text-align: center; margin-bottom: 30px;">🚨 EMERGENCY ALERT</h1>
+              
+              <div style="background-color: #fef2f2; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                <h2 style="color: #dc2626; margin-top: 0;">Emergency Details</h2>
+                <p><strong>Patient:</strong> ${patientName || 'Unknown'}</p>
+                <p><strong>Location:</strong> ${location}</p>
+                <p><strong>Condition:</strong> ${condition}</p>
+                <p><strong>Priority:</strong> ${priority.toUpperCase()}</p>
+                <p><strong>Emergency ID:</strong> ${emergencyId}</p>
+                <p><strong>Time:</strong> ${new Date().toLocaleString()}</p>
+              </div>
+              
+              <div style="background-color: #f3f4f6; padding: 15px; border-radius: 8px;">
+                <p style="margin: 0; color: #374151;">
+                  <strong>Dr. ${doctorName},</strong><br>
+                  Immediate medical attention is required. Please respond as soon as possible.
+                </p>
+              </div>
+              
+              <div style="text-align: center; margin-top: 30px;">
+                <p style="color: #6b7280; font-size: 14px;">
+                  This is an automated emergency notification from MediAid Hospital Management System.
+                </p>
+              </div>
+            </div>
+          `,
+          headers: {
+            'X-Priority': '1',
+            'X-MSMail-Priority': 'High',
+            'Importance': 'high'
+          }
+        });
+
+        if (emailResponse.error) {
+          console.error(`❌ Error sending email to ${doctorEmail}:`, emailResponse.error);
+          emailResults.push({ 
+            email: doctorEmail, 
+            success: false, 
+            error: emailResponse.error.message 
+          });
+        } else {
+          console.log(`✅ Email sent successfully to ${doctorEmail}:`, emailResponse.data);
+          emailResults.push({ 
+            email: doctorEmail, 
+            success: true, 
+            emailId: emailResponse.data?.id 
+          });
+        }
+      } catch (error) {
+        console.error(`❌ Exception sending email to ${doctorEmail}:`, error);
+        emailResults.push({ 
+          email: doctorEmail, 
+          success: false, 
+          error: error.message 
+        });
+      }
+    }
+
+    const successfulEmails = emailResults.filter(result => result.success);
+    const failedEmails = emailResults.filter(result => !result.success);
+
+    console.log(`📧 Email sending completed: ${successfulEmails.length} successful, ${failedEmails.length} failed`);
     
     return new Response(
       JSON.stringify({ 
-        success: true, 
-        notificationsSent: doctorEmails.length,
-        doctorEmailsSent: doctorEmails,
+        success: successfulEmails.length > 0,
+        notificationsSent: successfulEmails.length,
+        totalDoctors: doctorEmails.length,
+        doctorEmailsSent: successfulEmails.map(r => r.email),
         doctorNames: doctorNames,
-        message: `Emergency alert notification sent to ${doctorEmails.length} doctor(s): ${doctorEmails.join(', ')}`,
+        message: `Emergency emails sent successfully to ${successfulEmails.length} doctor(s): ${successfulEmails.map(r => r.email).join(', ')}`,
         timestamp: new Date().toISOString(),
-        note: 'Emergency notifications are working! Emails would be sent to doctors if email service is properly configured.',
+        emailResults: emailResults,
         emergencyDetails: {
           emergencyId,
           patientName,
