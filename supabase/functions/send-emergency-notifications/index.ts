@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.50.3';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -35,30 +36,88 @@ serve(async (req: Request) => {
 
     console.log('✅ All required fields present');
 
-    // For now, we'll simulate sending emails and return success
-    // You can replace this with actual email sending when you configure an email service
+    // Initialize Supabase client
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    );
+
+    console.log('📡 Fetching doctor profiles from database...');
     
-    console.log('📧 Simulating emergency email notifications...');
+    // Fetch all doctor profiles from the database
+    const { data: profiles, error: profileError } = await supabase
+      .from('profiles')
+      .select('user_id, name, role')
+      .eq('role', 'doctor');
+
+    if (profileError) {
+      console.error('❌ Error fetching doctor profiles:', profileError);
+      return new Response(
+        JSON.stringify({ 
+          success: false, 
+          error: 'Failed to fetch doctor profiles from database'
+        }),
+        { 
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        }
+      );
+    }
+
+    console.log('👨‍⚕️ Found doctor profiles:', profiles);
+
+    // Get user emails from auth.users table using service role key
+    const doctorEmails = [];
+    const doctorNames = [];
+
+    if (profiles && profiles.length > 0) {
+      for (const profile of profiles) {
+        // Get user email from auth.users
+        const { data: userData, error: userError } = await supabase.auth.admin.getUserById(profile.user_id);
+        
+        if (!userError && userData.user?.email) {
+          doctorEmails.push(userData.user.email);
+          doctorNames.push(profile.name || userData.user.email);
+          console.log(`📧 Found doctor: ${profile.name || 'Unknown'} (${userData.user.email})`);
+        }
+      }
+    }
+
+    if (doctorEmails.length === 0) {
+      console.log('⚠️ No doctor emails found in database');
+      return new Response(
+        JSON.stringify({ 
+          success: false, 
+          error: 'No doctor emails found in database'
+        }),
+        { 
+          status: 404,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        }
+      );
+    }
+
+    console.log('📧 Simulating emergency email notifications to:', doctorEmails);
     
-    // Simulate doctor emails (replace with actual doctor emails from your database)
-    const doctorEmails = ['kothavinoda@gmail.com', 'abcdwxyz6712@gmail.com'];
-    
-    console.log('📧 Would send emails to:', doctorEmails);
-    
-    // For demo purposes, we'll just return success
-    // In a real scenario, you would:
-    // 1. Set up a verified domain in Resend
-    // 2. Or use a different email service like SendGrid, Mailgun, etc.
-    // 3. Or send push notifications instead
+    // For now, simulate sending emails (replace with actual email service when configured)
+    // This is where you would integrate with Resend, SendGrid, etc.
     
     return new Response(
       JSON.stringify({ 
         success: true, 
         notificationsSent: doctorEmails.length,
         doctorEmailsSent: doctorEmails,
+        doctorNames: doctorNames,
         message: `Emergency alert notification sent to ${doctorEmails.length} doctor(s): ${doctorEmails.join(', ')}`,
         timestamp: new Date().toISOString(),
-        note: 'Emergency notifications are working! Emails would be sent to doctors if email service is properly configured.'
+        note: 'Emergency notifications are working! Emails would be sent to doctors if email service is properly configured.',
+        emergencyDetails: {
+          emergencyId,
+          patientName,
+          location,
+          condition,
+          priority
+        }
       }),
       {
         status: 200,
