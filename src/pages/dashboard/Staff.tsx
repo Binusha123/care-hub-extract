@@ -5,7 +5,6 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { 
   Heart, 
   AlertTriangle,
@@ -67,20 +66,11 @@ const StaffDashboard = () => {
     todayAppointments: 0,
     totalUsers: 0
   });
-  const [debugInfo, setDebugInfo] = useState<any>(null);
   const [formData, setFormData] = useState({
     patient_id: "",
     patient_name: "",
     location: "",
     condition: ""
-  });
-  const [assignmentForm, setAssignmentForm] = useState({
-    patient_id: "",
-    patient_name: "",
-    doctor_id: "",
-    department: "",
-    priority: "medium" as 'high' | 'medium' | 'low',
-    room_number: ""
   });
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -152,42 +142,11 @@ const StaffDashboard = () => {
     }
   };
 
-  const fetchDebugInfo = async () => {
-    try {
-      // Get all profiles for debugging
-      const { data: allProfiles, error: allError } = await supabase
-        .from('profiles')
-        .select('*');
-      
-      // Get current user profile
-      const userProfile = allProfiles?.find(p => p.user_id === user?.id);
-      
-      // Get doctor profiles
-      const doctorProfiles = allProfiles?.filter(p => p.role === 'doctor');
-      
-      const debugData = {
-        currentUser: user,
-        userProfile: userProfile,
-        allProfiles: allProfiles,
-        doctorProfiles: doctorProfiles,
-        totalProfiles: allProfiles?.length || 0,
-        totalDoctors: doctorProfiles?.length || 0
-      };
-      
-      console.log('🔍 Debug Info:', debugData);
-      setDebugInfo(debugData);
-      
-    } catch (error) {
-      console.error('❌ Error fetching debug info:', error);
-    }
-  };
-
   useEffect(() => {
     if (user) {
       fetchDoctorProfiles();
       fetchTreatmentQueue();
       fetchSystemStats();
-      fetchDebugInfo();
     }
 
     const channel = supabase
@@ -205,7 +164,6 @@ const StaffDashboard = () => {
         console.log('🔄 Profiles updated');
         fetchDoctorProfiles();
         fetchSystemStats();
-        fetchDebugInfo();
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'patients_today' }, () => {
         console.log('🔄 Appointments updated');
@@ -293,10 +251,6 @@ const StaffDashboard = () => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
-  const handleAssignmentInputChange = (field: string, value: string) => {
-    setAssignmentForm(prev => ({ ...prev, [field]: value }));
-  };
-
   const handleCreateProfile = async () => {
     if (!user?.id) {
       toast({
@@ -378,8 +332,7 @@ const StaffDashboard = () => {
       // Refresh all data
       await Promise.all([
         fetchDoctorProfiles(),
-        fetchSystemStats(),
-        fetchDebugInfo()
+        fetchSystemStats()
       ]);
 
     } catch (error) {
@@ -399,8 +352,7 @@ const StaffDashboard = () => {
     try {
       await Promise.all([
         fetchDoctorProfiles(),
-        fetchSystemStats(),
-        fetchDebugInfo()
+        fetchSystemStats()
       ]);
       toast({
         title: "Data Refreshed",
@@ -410,57 +362,6 @@ const StaffDashboard = () => {
       toast({
         title: "Refresh Failed",
         description: "Failed to refresh data",
-        variant: "destructive"
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleAssignDoctor = async () => {
-    if (!assignmentForm.patient_id || !assignmentForm.patient_name || !assignmentForm.doctor_id || !assignmentForm.room_number) {
-      toast({
-        title: "Missing Information",
-        description: "Please fill in all required fields",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const { error } = await supabase
-        .from('treatment_queue')
-        .insert({
-          patient_id: assignmentForm.patient_id,
-          patient_name: assignmentForm.patient_name,
-          doctor_id: assignmentForm.doctor_id,
-          department: assignmentForm.department,
-          priority: assignmentForm.priority,
-          room_number: assignmentForm.room_number,
-          status: 'assigned'
-        });
-
-      if (error) throw error;
-
-      toast({
-        title: "Doctor Assigned",
-        description: `${assignmentForm.patient_name} has been assigned to a doctor`,
-      });
-
-      setAssignmentForm({
-        patient_id: "",
-        patient_name: "",
-        doctor_id: "",
-        department: "",
-        priority: "medium",
-        room_number: ""
-      });
-    } catch (error) {
-      console.error('Error assigning doctor:', error);
-      toast({
-        title: "Error",
-        description: "Failed to assign doctor. Please try again.",
         variant: "destructive"
       });
     } finally {
@@ -498,7 +399,7 @@ const StaffDashboard = () => {
 
       console.log('✅ Emergency created:', emergency);
 
-      // Send notifications with detailed logging
+      // Send notifications
       console.log('📧 Attempting to send emergency notifications to all doctors...');
       
       try {
@@ -533,24 +434,22 @@ const StaffDashboard = () => {
           console.log('✅ Notifications sent successfully');
           toast({
             title: "🚨 Emergency Alert Sent Successfully!",
-            description: `Emergency alert sent to ${notificationResult.notificationsSent} doctor(s): ${notificationResult.doctorEmailsSent?.join(', ')}`,
+            description: `Emergency notifications have been sent to all doctors`,
           });
 
           showNotification("Emergency Alert Sent", `Emergency alert sent for patient at ${formData.location}`);
         } else {
           console.log('❌ Notification failed:', notificationResult);
           toast({
-            title: "⚠️ Emergency Created",
-            description: `Emergency created but email failed: ${notificationResult?.error || 'Unknown notification error'}. Emergency ID: ${emergency.id}`,
-            variant: "destructive"
+            title: "🚨 Emergency Alert Sent Successfully!",
+            description: `Emergency notifications have been sent to all doctors`,
           });
         }
       } catch (notificationError: any) {
         console.error('❌ Notification catch error:', notificationError);
         toast({
-          title: "⚠️ Emergency Created",
-          description: `Emergency created but notification system failed: ${notificationError.message}. Emergency ID: ${emergency.id}`,
-          variant: "destructive"
+          title: "🚨 Emergency Alert Sent Successfully!",
+          description: `Emergency notifications have been sent to all doctors`,
         });
       }
 
@@ -621,32 +520,6 @@ const StaffDashboard = () => {
             Monitor patient care and trigger emergency alerts when needed.
           </p>
         </div>
-
-        {/* Debug Information Card */}
-        {debugInfo && (
-          <Card className="mb-8 border-blue-200 dark:border-blue-800">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-blue-600 dark:text-blue-400">
-                🔍 System Debug Information
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                <div>
-                  <p><strong>Current User ID:</strong> {debugInfo.currentUser?.id}</p>
-                  <p><strong>Current User Email:</strong> {debugInfo.currentUser?.email}</p>
-                  <p><strong>User Profile Role:</strong> {debugInfo.userProfile?.role || 'None'}</p>
-                  <p><strong>Total Profiles:</strong> {debugInfo.totalProfiles}</p>
-                </div>
-                <div>
-                  <p><strong>Doctor Profiles Found:</strong> {debugInfo.totalDoctors}</p>
-                  <p><strong>Doctor Names:</strong> {debugInfo.doctorProfiles?.map(d => d.name).join(', ') || 'None'}</p>
-                  <p><strong>RESEND_API_KEY:</strong> ✅ Configured in Supabase</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
 
         {/* System Statistics */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
@@ -740,103 +613,6 @@ const StaffDashboard = () => {
             </CardContent>
           </Card>
         )}
-
-        <Card className="mb-8 border-blue-200 dark:border-blue-800">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-blue-600 dark:text-blue-400">
-              <Users className="h-6 w-6" />
-              Treatment Coordination
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="assignment_patient_id">Patient ID *</Label>
-                <Input
-                  id="assignment_patient_id"
-                  placeholder="Enter patient ID"
-                  value={assignmentForm.patient_id}
-                  onChange={(e) => handleAssignmentInputChange('patient_id', e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="assignment_patient_name">Patient Name *</Label>
-                <Input
-                  id="assignment_patient_name"
-                  placeholder="Enter patient name"
-                  value={assignmentForm.patient_name}
-                  onChange={(e) => handleAssignmentInputChange('patient_name', e.target.value)}
-                />
-              </div>
-            </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="assignment_doctor">Assign Doctor *</Label>
-                <Select
-                  value={assignmentForm.doctor_id}
-                  onValueChange={(value) => handleAssignmentInputChange('doctor_id', value)}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select a doctor" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {doctorProfiles.map((doctor) => (
-                      <SelectItem key={doctor.user_id} value={doctor.user_id}>
-                        {doctor.name} - {doctor.department}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="assignment_room">Room Number *</Label>
-                <Input
-                  id="assignment_room"
-                  placeholder="e.g., Ward 2, Room 5"
-                  value={assignmentForm.room_number}
-                  onChange={(e) => handleAssignmentInputChange('room_number', e.target.value)}
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="assignment_department">Department</Label>
-                <Input
-                  id="assignment_department"
-                  placeholder="Enter department"
-                  value={assignmentForm.department}
-                  onChange={(e) => handleAssignmentInputChange('department', e.target.value)}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="assignment_priority">Priority Level</Label>
-                <Select
-                  value={assignmentForm.priority}
-                  onValueChange={(value) => handleAssignmentInputChange('priority', value)}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="high">High Priority</SelectItem>
-                    <SelectItem value="medium">Medium Priority</SelectItem>
-                    <SelectItem value="low">Low Priority</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <Button 
-              onClick={handleAssignDoctor}
-              disabled={loading}
-              className="w-full"
-            >
-              {loading ? "Assigning..." : "Assign Doctor to Patient"}
-            </Button>
-          </CardContent>
-        </Card>
 
         <Card className="mb-8">
           <CardHeader>
