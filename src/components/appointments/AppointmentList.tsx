@@ -192,9 +192,9 @@ const AppointmentList = ({ patientId, isPatient = true }: AppointmentListProps) 
                     </div>
                     
                     <div className="flex items-center gap-2 mb-2">
-                      <Clock className="h-4 w-4 text-muted-foreground" />
+                      <Calendar className="h-4 w-4 text-muted-foreground" />
                       <span>
-                        {format(new Date(appointment.appointment_date), 'PPP')} at {appointment.appointment_time}
+                        {format(new Date(appointment.appointment_date), 'PPP')}
                       </span>
                     </div>
                     
@@ -226,7 +226,6 @@ const AppointmentList = ({ patientId, isPatient = true }: AppointmentListProps) 
                             
                             <div className="bg-muted p-3 rounded-lg">
                               <p><strong>Date:</strong> {format(new Date(appointment.appointment_date), 'PPP')}</p>
-                              <p><strong>Time:</strong> {appointment.appointment_time}</p>
                               <p><strong>Doctor:</strong> {appointment.doctor_name}</p>
                               <p><strong>Hospital:</strong> {appointment.hospital_name}</p>
                             </div>

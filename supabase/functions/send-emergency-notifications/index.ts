@@ -179,19 +179,20 @@ serve(async (req: Request) => {
           }
         });
 
-        if (emailResponse.error) {
-          console.error(`❌ Error sending email to ${doctorEmail}:`, emailResponse.error);
+        // Validate email was actually sent successfully
+        if (emailResponse.error || !emailResponse.data?.id) {
+          console.error(`❌ Error sending email to ${doctorEmail}:`, emailResponse.error || 'No email ID returned');
           emailResults.push({ 
             email: doctorEmail, 
             success: false, 
-            error: emailResponse.error.message 
+            error: emailResponse.error?.message || 'Failed to send email - no confirmation ID received' 
           });
         } else {
           console.log(`✅ Email sent successfully to ${verifiedTestEmail} (for ${doctorEmail}):`, emailResponse.data);
           emailResults.push({ 
             email: doctorEmail, 
             success: true, 
-            emailId: emailResponse.data?.id,
+            emailId: emailResponse.data.id,
             note: `Sent to ${verifiedTestEmail} for testing - would be sent to ${doctorEmail} in production`
           });
         }

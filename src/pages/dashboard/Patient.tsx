@@ -251,19 +251,7 @@ const PatientDashboard = () => {
         </div>
 
         {/* Quick Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center gap-3">
-                <FileText className="h-8 w-8 text-primary" />
-                <div>
-                  <p className="text-sm text-muted-foreground">Total Reports</p>
-                  <p className="text-2xl font-bold">{reports.length}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <Card>
             <CardContent className="p-6">
               <div className="flex items-center gap-3">
