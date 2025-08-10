@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import FileUpload from "@/components/FileUpload";
 import AppointmentBooking from "@/components/appointments/AppointmentBooking";
 import AppointmentList from "@/components/appointments/AppointmentList";
+import DoctorAvailability from "@/components/DoctorAvailability";
 import { 
   Heart, 
   Calendar, 
@@ -251,7 +252,7 @@ const PatientDashboard = () => {
         </div>
 
         {/* Quick Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
           <Card>
             <CardContent className="p-6">
               <div className="flex items-center gap-3">
@@ -271,18 +272,6 @@ const PatientDashboard = () => {
                 <div>
                   <p className="text-sm text-muted-foreground">Health Score</p>
                   <p className="text-2xl font-bold">85%</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center gap-3">
-                <Heart className="h-8 w-8 text-red-500" />
-                <div>
-                  <p className="text-sm text-muted-foreground">Alerts</p>
-                  <p className="text-2xl font-bold">2</p>
                 </div>
               </div>
             </CardContent>
@@ -393,6 +382,11 @@ const PatientDashboard = () => {
                           </Badge>
                         </div>
                       )}
+                    </div>
+
+                    {/* Doctor Availability Times */}
+                    <div className="mt-3 pt-3 border-t">
+                      <DoctorAvailability doctorId={shift.doctor_id} isEditable={false} />
                     </div>
                   </CardContent>
                 </Card>

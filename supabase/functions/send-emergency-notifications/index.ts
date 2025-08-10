@@ -158,6 +158,13 @@ serve(async (req: Request) => {
                 <p><strong>Time:</strong> ${new Date().toLocaleString()}</p>
               </div>
               
+              <div style="text-align: center; margin: 30px 0;">
+                <a href="https://ynwvqmoxtmmyjnoguffg.supabase.co/functions/v1/resolve-emergency?id=${emergencyId}" 
+                   style="display: inline-block; padding: 12px 24px; background-color: #28a745; color: white; text-decoration: none; border-radius: 5px; font-weight: bold;">
+                   ✅ Mark as Completed
+                </a>
+              </div>
+
               <div style="background-color: #f3f4f6; padding: 15px; border-radius: 8px;">
                 <p style="margin: 0; color: #374151;">
                   <strong>Dr. ${doctorName},</strong><br>
@@ -169,6 +176,7 @@ serve(async (req: Request) => {
                 <p style="color: #6b7280; font-size: 14px;">
                   This is an automated emergency notification from MediAid Hospital Management System.
                 </p>
+                <p style="font-size: 12px; color: #666;">Click the button above to mark this emergency as resolved once treatment is complete.</p>
               </div>
             </div>
           `,

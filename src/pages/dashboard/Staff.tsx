@@ -522,19 +522,7 @@ const StaffDashboard = () => {
         </div>
 
         {/* System Statistics */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
-          <Card className="bg-gradient-to-r from-green-50 to-green-100 border-green-200">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <Users className="h-6 w-6 text-green-600" />
-                <div>
-                  <p className="text-xs text-green-600 font-medium">Total Users</p>
-                  <p className="text-2xl font-bold text-green-700">{systemStats.totalUsers}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
           <Card className="bg-gradient-to-r from-blue-50 to-blue-100 border-blue-200">
             <CardContent className="p-4">
               <div className="flex items-center gap-3">

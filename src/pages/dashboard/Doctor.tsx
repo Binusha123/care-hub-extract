@@ -17,6 +17,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
 import { format } from 'date-fns';
+import DoctorAvailability from "@/components/DoctorAvailability";
 
 interface PatientToday {
   id: string;
@@ -365,7 +366,7 @@ const DoctorDashboard = () => {
         </div>
 
         {/* Real-time Statistics Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
           <Card className="bg-gradient-to-r from-blue-50 to-blue-100 border-blue-200">
             <CardContent className="p-6">
               <div className="flex items-center gap-3">
@@ -390,18 +391,6 @@ const DoctorDashboard = () => {
             </CardContent>
           </Card>
 
-          <Card className="bg-gradient-to-r from-green-50 to-green-100 border-green-200">
-            <CardContent className="p-6">
-              <div className="flex items-center gap-3">
-                <Activity className="h-8 w-8 text-green-600" />
-                <div>
-                  <p className="text-sm text-green-600 font-medium">Pending Treatments</p>
-                  <p className="text-3xl font-bold text-green-700">{realtimeStats.pendingTreatments}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
           <Card className="bg-gradient-to-r from-purple-50 to-purple-100 border-purple-200">
             <CardContent className="p-6">
               <div className="flex items-center gap-3">
@@ -413,6 +402,11 @@ const DoctorDashboard = () => {
               </div>
             </CardContent>
           </Card>
+        </div>
+
+        {/* Doctor Availability Section */}
+        <div className="mb-8">
+          <DoctorAvailability doctorId={user.id} isEditable={true} />
         </div>
 
         {/* Patients Today Card */}

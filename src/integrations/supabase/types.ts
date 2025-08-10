@@ -14,6 +14,36 @@ export type Database = {
   }
   public: {
     Tables: {
+      doctor_availability: {
+        Row: {
+          available_from: string
+          available_to: string
+          created_at: string
+          day_of_week: number | null
+          doctor_id: string
+          id: string
+          updated_at: string
+        }
+        Insert: {
+          available_from: string
+          available_to: string
+          created_at?: string
+          day_of_week?: number | null
+          doctor_id: string
+          id?: string
+          updated_at?: string
+        }
+        Update: {
+          available_from?: string
+          available_to?: string
+          created_at?: string
+          day_of_week?: number | null
+          doctor_id?: string
+          id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       doctor_shifts: {
         Row: {
           created_at: string
@@ -56,6 +86,7 @@ export type Database = {
           patient_id: string
           patient_name: string | null
           resolved: boolean | null
+          status: string | null
           triggered_by: string | null
           updated_at: string
         }
@@ -67,6 +98,7 @@ export type Database = {
           patient_id: string
           patient_name?: string | null
           resolved?: boolean | null
+          status?: string | null
           triggered_by?: string | null
           updated_at?: string
         }
@@ -78,6 +110,7 @@ export type Database = {
           patient_id?: string
           patient_name?: string | null
           resolved?: boolean | null
+          status?: string | null
           triggered_by?: string | null
           updated_at?: string
         }
