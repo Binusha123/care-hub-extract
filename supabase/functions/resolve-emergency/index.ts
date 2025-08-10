@@ -28,9 +28,18 @@ const handler = async (req: Request): Promise<Response> => {
 
     console.log(`🔄 Resolving emergency: ${emergencyId}`);
 
+    // Get auth token from request header for public access
+    const authHeader = req.headers.get('authorization') || req.headers.get('Authorization');
+    
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false
+        }
+      }
     );
 
     // Update emergency status to resolved
