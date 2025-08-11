@@ -1,0 +1,2 @@
+-- Make resolve-emergency function public (no auth required)
+-- Update config.toml to set verify_jwt = false for resolve-emergency function

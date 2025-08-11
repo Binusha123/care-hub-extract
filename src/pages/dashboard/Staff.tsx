@@ -116,7 +116,7 @@ const StaffDashboard = () => {
       
       const [doctorsResult, emergenciesResult, treatmentsResult, appointmentsResult] = await Promise.all([
         supabase.from('profiles').select('user_id', { count: 'exact' }).eq('role', 'doctor'),
-        supabase.from('emergencies').select('id', { count: 'exact' }).eq('resolved', false),
+        supabase.from('emergencies').select('id', { count: 'exact' }).or('resolved.is.false,status.neq.resolved'),
         supabase.from('treatment_queue').select('id', { count: 'exact' }).neq('status', 'completed'),
         supabase.from('patients_today').select('id', { count: 'exact' }).eq('date', new Date().toISOString().split('T')[0])
       ]);
