@@ -60,7 +60,14 @@ const handler = async (req: Request): Promise<Response> => {
 
     console.log('✅ Emergency resolved successfully:', data);
 
-    // Return a simple HTML success page
+    // Also update related treatment queue entries
+    await supabase
+      .from('treatment_queue')
+      .update({ status: 'completed' })
+      .eq('patient_id', data.patient_id)
+      .neq('status', 'completed');
+
+    // Return a redirect to close the page with success
     const htmlResponse = `
       <!DOCTYPE html>
       <html>
@@ -78,7 +85,14 @@ const handler = async (req: Request): Promise<Response> => {
             <p>Emergency ID: ${emergencyId}</p>
             <p>Status: Resolved</p>
             <p>This emergency has been marked as completed.</p>
+            <p>You can close this window now.</p>
           </div>
+          <script>
+            // Auto-close after 2 seconds
+            setTimeout(() => {
+              window.close();
+            }, 2000);
+          </script>
         </body>
       </html>
     `;

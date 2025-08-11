@@ -29,6 +29,11 @@ interface DoctorShift {
   response_status: 'available' | 'on-round' | 'in-surgery' | 'busy';
   doctor_name?: string;
   department?: string;
+  availability?: Array<{
+    id?: string;
+    available_from: string;
+    available_to: string;
+  }>;
 }
 
 interface TreatmentQueue {
@@ -102,6 +107,24 @@ const PatientDashboard = () => {
           table: 'doctor_shifts'
         },
         () => {
+          console.log('🔄 Doctor shifts changed');
+          fetchDoctorShifts();
+        }
+      )
+      .subscribe();
+
+    // Real-time subscription for doctor availability
+    const availabilitySubscription = supabase
+      .channel('patient_doctor_availability_changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'doctor_availability'
+        },
+        () => {
+          console.log('🔄 Doctor availability changed');
           fetchDoctorShifts();
         }
       )
@@ -126,8 +149,9 @@ const PatientDashboard = () => {
       .subscribe();
 
     return () => {
-      shiftSubscription.unsubscribe();
-      treatmentSubscription.unsubscribe();
+      supabase.removeChannel(shiftSubscription);
+      supabase.removeChannel(availabilitySubscription);
+      supabase.removeChannel(treatmentSubscription);
     };
   }, [user]);
 
@@ -144,23 +168,33 @@ const PatientDashboard = () => {
         return;
       }
 
-      // Get doctor profiles
+      // Get doctor profiles and availability in parallel
       const doctorIds = shifts.map(shift => shift.doctor_id);
-      const { data: profiles, error: profilesError } = await supabase
-        .from('profiles')
-        .select('user_id, name, department')
-        .in('user_id', doctorIds);
+      const [profilesResult, availabilityResult] = await Promise.all([
+        supabase
+          .from('profiles')
+          .select('user_id, name, department')
+          .in('user_id', doctorIds),
+        supabase
+          .from('doctor_availability')
+          .select('*')
+          .in('doctor_id', doctorIds)
+      ]);
 
-      if (profilesError) throw profilesError;
+      if (profilesResult.error) throw profilesResult.error;
+      if (availabilityResult.error) throw availabilityResult.error;
 
       const shiftsWithDetails = shifts.map(shift => {
-        const profile = profiles?.find(p => p.user_id === shift.doctor_id);
+        const profile = profilesResult.data?.find(p => p.user_id === shift.doctor_id);
+        const availability = availabilityResult.data?.filter(a => a.doctor_id === shift.doctor_id) || [];
+        
         return {
           ...shift,
           status: shift.status as 'on-duty' | 'off-duty',
           response_status: shift.response_status as 'available' | 'on-round' | 'in-surgery' | 'busy',
           doctor_name: profile?.name || 'Unknown Doctor',
-          department: profile?.department || 'General'
+          department: profile?.department || 'General',
+          availability: availability
         } as DoctorShift;
       });
 
