@@ -78,23 +78,35 @@ const StaffDashboard = () => {
 
   useEffect(() => {
     const getUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
+      try {
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        console.log('Current user:', user);
+        console.log('User error:', userError);
+        
+        if (!user || userError) {
+          console.log('No user found, redirecting to login');
+          navigate('/login');
+          return;
+        }
+
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('user_id', user.id)
+          .single();
+
+        console.log('User profile:', profile);
+        console.log('Profile error:', profileError);
+
+        setUser({
+          ...user,
+          name: profile?.name || user.email,
+          role: profile?.role || 'staff'
+        });
+      } catch (error) {
+        console.error('Error getting user:', error);
         navigate('/login');
-        return;
       }
-
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('user_id', user.id)
-        .single();
-
-      setUser({
-        ...user,
-        name: profile?.name || user.email,
-        role: profile?.role || 'staff'
-      });
     };
 
     getUser();
@@ -485,7 +497,14 @@ const StaffDashboard = () => {
     navigate('/');
   };
 
-  if (!user) return <div>Loading...</div>;
+  if (!user) return (
+    <div className="min-h-screen flex items-center justify-center">
+      <div className="text-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+        <p>Loading staff dashboard...</p>
+      </div>
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-background">
