@@ -67,31 +67,35 @@ const handler = async (req: Request): Promise<Response> => {
       .eq('patient_id', data.patient_id)
       .neq('status', 'completed');
 
-    // Return a redirect to close the page with success
+    // Return a minimal HTML page that closes automatically and triggers dashboard updates
     const htmlResponse = `
       <!DOCTYPE html>
       <html>
         <head>
           <title>Emergency Resolved</title>
           <style>
-            body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
-            .success { color: #28a745; font-size: 24px; margin-bottom: 20px; }
-            .info { color: #666; }
+            body { font-family: Arial, sans-serif; text-align: center; padding: 30px; }
+            .success { color: #28a745; font-size: 24px; margin-bottom: 15px; }
+            .info { color: #666; font-size: 14px; }
           </style>
         </head>
         <body>
           <div class="success">✅ Emergency Resolved Successfully</div>
           <div class="info">
             <p>Emergency ID: ${emergencyId}</p>
-            <p>Status: Resolved</p>
             <p>This emergency has been marked as completed.</p>
-            <p>You can close this window now.</p>
+            <p>Dashboard counts will update automatically.</p>
           </div>
           <script>
-            // Auto-close after 2 seconds
+            // Auto-close immediately after 1 second
             setTimeout(() => {
-              window.close();
-            }, 2000);
+              try {
+                window.close();
+              } catch (e) {
+                // Fallback for browsers that don't allow window.close()
+                document.body.innerHTML = '<div style="text-align:center; padding: 20px;"><h2>✅ Emergency Resolved</h2><p>You can close this window/tab now.</p></div>';
+              }
+            }, 1000);
           </script>
         </body>
       </html>

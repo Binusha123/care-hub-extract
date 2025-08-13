@@ -241,35 +241,46 @@ const DoctorDashboard = () => {
           fetchPatientsToday();
           fetchRealtimeStats();
         }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'emergencies'
-        },
-        (payload) => {
-          console.log('New emergency created:', payload);
-          // Show browser notification for new emergencies
-          if ('Notification' in window && Notification.permission === 'granted') {
-            new Notification("🚨 NEW EMERGENCY ALERT", {
-              body: `Emergency at ${payload.new.location}: ${payload.new.condition}`,
-              icon: '/favicon.ico',
-              requireInteraction: true
-            });
-          }
-          
-          toast({
-            title: "🚨 NEW EMERGENCY ALERT",
-            description: `Emergency at ${payload.new.location}: ${payload.new.condition}`,
-            variant: "destructive"
-          });
-          
-          fetchPatientsToday();
-          fetchRealtimeStats();
-        }
-      )
+       )
+       .on(
+         'postgres_changes',
+         {
+           event: '*',
+           schema: 'public',
+           table: 'emergencies'
+         },
+         (payload) => {
+           console.log('Emergency updated:', payload);
+           
+           // Only show notification for new emergencies, not updates
+           if (payload.eventType === 'INSERT') {
+             // Show browser notification for new emergencies
+             if ('Notification' in window && Notification.permission === 'granted') {
+               new Notification("🚨 NEW EMERGENCY ALERT", {
+                 body: `Emergency at ${payload.new.location}: ${payload.new.condition}`,
+                 icon: '/favicon.ico',
+                 requireInteraction: true
+               });
+             }
+             
+             toast({
+               title: "🚨 NEW EMERGENCY ALERT",
+               description: `Emergency at ${payload.new.location}: ${payload.new.condition}`,
+               variant: "destructive"
+             });
+           } else if (payload.eventType === 'UPDATE' && payload.new.resolved) {
+             // Show notification when emergency is resolved
+             toast({
+               title: "✅ Emergency Resolved",
+               description: `Emergency for ${payload.new.patient_name} has been resolved`,
+               variant: "default"
+             });
+           }
+           
+           fetchPatientsToday();
+           fetchRealtimeStats();
+         }
+       )
       .subscribe();
 
     // Refresh data every 30 seconds
