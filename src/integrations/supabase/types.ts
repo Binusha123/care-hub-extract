@@ -116,6 +116,57 @@ export type Database = {
         }
         Relationships: []
       }
+      help_requests: {
+        Row: {
+          assigned_to: string | null
+          created_at: string
+          description: string
+          emergency_id: string | null
+          id: string
+          request_type: string
+          requested_by: string
+          requester_role: string
+          resolved_at: string | null
+          response_notes: string | null
+          status: string
+          treatment_queue_id: string | null
+          updated_at: string
+          urgency: string
+        }
+        Insert: {
+          assigned_to?: string | null
+          created_at?: string
+          description: string
+          emergency_id?: string | null
+          id?: string
+          request_type: string
+          requested_by: string
+          requester_role: string
+          resolved_at?: string | null
+          response_notes?: string | null
+          status?: string
+          treatment_queue_id?: string | null
+          updated_at?: string
+          urgency?: string
+        }
+        Update: {
+          assigned_to?: string | null
+          created_at?: string
+          description?: string
+          emergency_id?: string | null
+          id?: string
+          request_type?: string
+          requested_by?: string
+          requester_role?: string
+          resolved_at?: string | null
+          response_notes?: string | null
+          status?: string
+          treatment_queue_id?: string | null
+          updated_at?: string
+          urgency?: string
+        }
+        Relationships: []
+      }
       patients_today: {
         Row: {
           appointment_time: string
@@ -203,6 +254,51 @@ export type Database = {
           subscription?: Json
           updated_at?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      resolved_cases: {
+        Row: {
+          condition: string
+          created_at: string
+          doctor_id: string
+          emergency_id: string
+          id: string
+          location: string
+          patient_id: string
+          patient_name: string
+          resolution_notes: string | null
+          resolved_at: string
+          resolved_by: string
+          updated_at: string
+        }
+        Insert: {
+          condition: string
+          created_at?: string
+          doctor_id: string
+          emergency_id: string
+          id?: string
+          location: string
+          patient_id: string
+          patient_name: string
+          resolution_notes?: string | null
+          resolved_at?: string
+          resolved_by: string
+          updated_at?: string
+        }
+        Update: {
+          condition?: string
+          created_at?: string
+          doctor_id?: string
+          emergency_id?: string
+          id?: string
+          location?: string
+          patient_id?: string
+          patient_name?: string
+          resolution_notes?: string | null
+          resolved_at?: string
+          resolved_by?: string
+          updated_at?: string
         }
         Relationships: []
       }

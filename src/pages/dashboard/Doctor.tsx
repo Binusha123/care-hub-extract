@@ -18,6 +18,9 @@ import { useToast } from "@/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
 import { format } from 'date-fns';
 import DoctorAvailability from "@/components/DoctorAvailability";
+import ResolvedCases from "@/components/ResolvedCases";
+import HelpRequests from "@/components/HelpRequests";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface PatientToday {
   id: string;
@@ -415,13 +418,19 @@ const DoctorDashboard = () => {
           </Card>
         </div>
 
-        {/* Doctor Availability Section */}
-        <div className="mb-8">
-          <DoctorAvailability doctorId={user.id} isEditable={true} />
-        </div>
+        {/* Main Dashboard Tabs */}
+        <Tabs defaultValue="patients" className="space-y-6">
+          <TabsList className="grid w-full grid-cols-4">
+            <TabsTrigger value="patients">Today's Patients</TabsTrigger>
+            <TabsTrigger value="availability">My Availability</TabsTrigger>
+            <TabsTrigger value="resolved">Resolved Cases</TabsTrigger>
+            <TabsTrigger value="help">Help Requests</TabsTrigger>
+          </TabsList>
 
-        {/* Patients Today Card */}
-        <Card>
+          <TabsContent value="patients" className="space-y-6">
+
+            {/* Patients Today Card */}
+            <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Activity className="h-6 w-6" />
@@ -496,6 +505,20 @@ const DoctorDashboard = () => {
             )}
           </CardContent>
         </Card>
+          </TabsContent>
+
+          <TabsContent value="availability">
+            <DoctorAvailability doctorId={user.id} isEditable={true} />
+          </TabsContent>
+
+          <TabsContent value="resolved">
+            <ResolvedCases doctorId={user.id} />
+          </TabsContent>
+
+          <TabsContent value="help">
+            <HelpRequests userId={user.id} userRole="doctor" />
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
   );

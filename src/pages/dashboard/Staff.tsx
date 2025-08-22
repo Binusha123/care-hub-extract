@@ -21,6 +21,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
 import { useNotifications } from "@/hooks/useNotifications";
+import HelpRequests from "@/components/HelpRequests";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface DoctorProfile {
   user_id: string;
@@ -194,6 +196,24 @@ const StaffDashboard = () => {
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'patients_today' }, () => {
         console.log('🔄 Appointments updated');
+        fetchSystemStats();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'doctor_availability' }, () => {
+        console.log('🔄 Doctor availability updated');
+        fetchDoctorProfiles();
+        fetchSystemStats();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'doctor_shifts' }, () => {
+        console.log('🔄 Doctor shifts updated');
+        fetchDoctorProfiles();
+        fetchSystemStats();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'resolved_cases' }, () => {
+        console.log('🔄 Resolved cases updated');
+        fetchSystemStats();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'help_requests' }, () => {
+        console.log('🔄 Help requests updated');
         fetchSystemStats();
       })
       .subscribe();
@@ -755,41 +775,55 @@ const StaffDashboard = () => {
           </CardContent>
         </Card>
 
-        <Card className="mb-8">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Users className="h-6 w-6" />
-              Available Doctors ({doctorProfiles.length} doctor profiles)
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {doctorProfiles.map((doctor) => (
-                <Card key={doctor.user_id}>
-                  <CardContent className="p-4">
-                    <div className="flex items-start justify-between mb-2">
-                      <div>
-                        <h4 className="font-semibold">{doctor.name}</h4>
-                        <p className="text-sm text-muted-foreground">{doctor.department}</p>
-                      </div>
-                      <Badge variant="default">Available</Badge>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-            
-            {doctorProfiles.length === 0 && (
-              <div className="text-center py-8">
-                <p className="text-muted-foreground mb-2">No doctor profiles found</p>
-                <p className="text-sm text-muted-foreground">
-                  Total registered users: {systemStats.totalUsers} | 
-                  Doctor profiles: {systemStats.totalDoctors}
-                </p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        {/* Dashboard Tabs */}
+        <Tabs defaultValue="doctors" className="space-y-6">
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="doctors">Available Doctors</TabsTrigger>
+            <TabsTrigger value="help">Help Requests</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="doctors">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Users className="h-6 w-6" />
+                  Available Doctors ({doctorProfiles.length} doctor profiles)
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {doctorProfiles.map((doctor) => (
+                    <Card key={doctor.user_id}>
+                      <CardContent className="p-4">
+                        <div className="flex items-start justify-between mb-2">
+                          <div>
+                            <h4 className="font-semibold">{doctor.name}</h4>
+                            <p className="text-sm text-muted-foreground">{doctor.department}</p>
+                          </div>
+                          <Badge variant="default">Available</Badge>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+                
+                {doctorProfiles.length === 0 && (
+                  <div className="text-center py-8">
+                    <p className="text-muted-foreground mb-2">No doctor profiles found</p>
+                    <p className="text-sm text-muted-foreground">
+                      Total registered users: {systemStats.totalUsers} | 
+                      Doctor profiles: {systemStats.totalDoctors}
+                    </p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="help">
+            <HelpRequests userId={user.id} userRole="staff" />
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
   );
