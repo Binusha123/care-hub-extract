@@ -98,9 +98,24 @@ const StaffDashboard = () => {
         console.log('User profile:', profile);
         console.log('Profile error:', profileError);
 
+        // If no profile exists, create one with staff role
+        if (!profile) {
+          const { error: insertError } = await supabase
+            .from('profiles')
+            .insert({
+              user_id: user.id,
+              name: user.email?.split('@')[0] || 'Staff User',
+              role: 'staff'
+            });
+          
+          if (insertError) {
+            console.error('Error creating profile:', insertError);
+          }
+        }
+
         setUser({
           ...user,
-          name: profile?.name || user.email,
+          name: profile?.name || user.email?.split('@')[0] || 'Staff User',
           role: profile?.role || 'staff'
         });
       } catch (error) {
@@ -394,6 +409,18 @@ const StaffDashboard = () => {
     setLoading(true);
     try {
       console.log('🚨 Creating emergency alert...');
+      console.log('Current user:', user);
+      console.log('User role:', user.role);
+      
+      // First check if user has the right permissions by fetching profile
+      const { data: currentProfile, error: profileCheckError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('user_id', user.id)
+        .single();
+      
+      console.log('Current profile check:', currentProfile);
+      console.log('Profile check error:', profileCheckError);
       
       const { data: emergency, error } = await supabase
         .from('emergencies')
