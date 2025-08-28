@@ -17,7 +17,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
 import { format } from 'date-fns';
-import DoctorAvailability from "@/components/DoctorAvailability";
+import DoctorProfile from "@/components/DoctorProfile";
 import ResolvedCases from "@/components/ResolvedCases";
 import HelpRequests from "@/components/HelpRequests";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -43,12 +43,14 @@ const DoctorDashboard = () => {
   const [counts, setCounts] = useState({
     appointments: 0,
     emergencies: 0,
-    total: 0
+    total: 0,
+    patientsToday: 0
   });
   const [realtimeStats, setRealtimeStats] = useState({
     totalEmergencies: 0,
     totalPatients: 0,
-    pendingTreatments: 0
+    pendingTreatments: 0,
+    activeEmergencies: 0
   });
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -58,35 +60,57 @@ const DoctorDashboard = () => {
     if (!user?.id) return;
 
     try {
-      // Get total emergencies for this doctor
-      const { data: emergencies, error: emergenciesError } = await supabase
+      const today = format(new Date(), 'yyyy-MM-dd');
+
+      // Get active emergencies (not resolved)
+      const { data: activeEmergencies, error: emergenciesError } = await supabase
         .from('emergencies')
         .select('id')
-        .eq('resolved', false);
+        .in('status', ['ACTIVE', 'ASSIGNED']);
 
-      // Get total patients assigned to this doctor today
-      const today = format(new Date(), 'yyyy-MM-dd');
-      const { data: todayPatients, error: todayError } = await supabase
-        .from('patients_today')
+      // Get today's appointments for this doctor
+      const { data: todayAppointments, error: appointmentsError } = await supabase
+        .from('appointments')
         .select('id')
         .eq('doctor_id', user.id)
-        .eq('date', today);
+        .eq('appointment_date', today)
+        .in('status', ['BOOKED', 'CHECKED_IN', 'IN_PROGRESS']);
 
-      // Get pending treatments for this doctor
-      const { data: treatments, error: treatmentsError } = await supabase
-        .from('treatment_queue')
-        .select('id')
+      // Get total unique patients who ever booked with this doctor
+      const { data: totalPatients, error: totalPatientsError } = await supabase
+        .from('appointments')
+        .select('patient_id')
+        .eq('doctor_id', user.id);
+
+      // Get distinct patients today
+      const { data: patientsToday, error: patientsTodayError } = await supabase
+        .from('appointments')
+        .select('patient_id')
         .eq('doctor_id', user.id)
-        .neq('status', 'completed');
+        .eq('appointment_date', today)
+        .in('status', ['BOOKED', 'CHECKED_IN', 'IN_PROGRESS', 'COMPLETED']);
 
       if (emergenciesError) console.error('Error fetching emergencies:', emergenciesError);
-      if (todayError) console.error('Error fetching today patients:', todayError);
-      if (treatmentsError) console.error('Error fetching treatments:', treatmentsError);
+      if (appointmentsError) console.error('Error fetching appointments:', appointmentsError);
+      if (totalPatientsError) console.error('Error fetching total patients:', totalPatientsError);
+      if (patientsTodayError) console.error('Error fetching patients today:', patientsTodayError);
+
+      // Calculate unique patient counts
+      const uniqueTotalPatients = [...new Set(totalPatients?.map(p => p.patient_id) || [])].length;
+      const uniquePatientsToday = [...new Set(patientsToday?.map(p => p.patient_id) || [])].length;
+
+      setCounts({
+        appointments: todayAppointments?.length || 0,
+        emergencies: 0, // Will be set separately
+        total: uniquePatientsToday,
+        patientsToday: uniquePatientsToday
+      });
 
       setRealtimeStats({
-        totalEmergencies: emergencies?.length || 0,
-        totalPatients: todayPatients?.length || 0,
-        pendingTreatments: treatments?.length || 0
+        totalEmergencies: activeEmergencies?.length || 0,
+        totalPatients: uniqueTotalPatients,
+        pendingTreatments: 0, // Calculated from treatment queue
+        activeEmergencies: activeEmergencies?.length || 0
       });
 
     } catch (error) {
@@ -167,7 +191,8 @@ const DoctorDashboard = () => {
       setCounts({
         appointments: appointmentPatients.length,
         emergencies: emergencyPatients.length,
-        total: allPatients.length
+        total: allPatients.length,
+        patientsToday: allPatients.length
       });
 
     } catch (error) {
@@ -217,6 +242,19 @@ const DoctorDashboard = () => {
     // Real-time subscriptions for updates
     const channel = supabase
       .channel(`doctor_updates_${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'appointments'
+        },
+        (payload) => {
+          console.log('Appointments updated:', payload);
+          fetchPatientsToday();
+          fetchRealtimeStats();
+        }
+      )
       .on(
         'postgres_changes',
         {
@@ -281,6 +319,19 @@ const DoctorDashboard = () => {
            }
            
            fetchPatientsToday();
+           fetchRealtimeStats();
+         }
+       )
+       .on(
+         'postgres_changes',
+         {
+           event: '*',
+           schema: 'public',
+           table: 'doctor_availability'
+         },
+         (payload) => {
+           console.log('Doctor availability updated:', payload);
+           // This will trigger updates on Staff dashboard
            fetchRealtimeStats();
          }
        )
@@ -387,7 +438,7 @@ const DoctorDashboard = () => {
                 <Calendar className="h-8 w-8 text-blue-600" />
                 <div>
                   <p className="text-sm text-blue-600 font-medium">Today's Appointments</p>
-                  <p className="text-3xl font-bold text-blue-700">{counts.appointments}</p>
+                  <p className="text-3xl font-bold text-blue-700 transition-all duration-300">{counts.appointments}</p>
                 </div>
               </div>
             </CardContent>
@@ -399,7 +450,7 @@ const DoctorDashboard = () => {
                 <AlertTriangle className="h-8 w-8 text-red-600" />
                 <div>
                   <p className="text-sm text-red-600 font-medium">Active Emergencies</p>
-                  <p className="text-3xl font-bold text-red-700">{realtimeStats.totalEmergencies}</p>
+                  <p className="text-3xl font-bold text-red-700 transition-all duration-300">{realtimeStats.activeEmergencies}</p>
                 </div>
               </div>
             </CardContent>
@@ -411,7 +462,7 @@ const DoctorDashboard = () => {
                 <User className="h-8 w-8 text-purple-600" />
                 <div>
                   <p className="text-sm text-purple-600 font-medium">Total Patients</p>
-                  <p className="text-3xl font-bold text-purple-700">{counts.total}</p>
+                  <p className="text-3xl font-bold text-purple-700 transition-all duration-300">{realtimeStats.totalPatients}</p>
                 </div>
               </div>
             </CardContent>
@@ -422,7 +473,7 @@ const DoctorDashboard = () => {
         <Tabs defaultValue="patients" className="space-y-6">
           <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="patients">Today's Patients</TabsTrigger>
-            <TabsTrigger value="availability">My Availability</TabsTrigger>
+            <TabsTrigger value="profile">My Profile & Availability</TabsTrigger>
             <TabsTrigger value="resolved">Resolved Cases</TabsTrigger>
             <TabsTrigger value="help">Help Requests</TabsTrigger>
           </TabsList>
@@ -507,8 +558,8 @@ const DoctorDashboard = () => {
         </Card>
           </TabsContent>
 
-          <TabsContent value="availability">
-            <DoctorAvailability doctorId={user.id} isEditable={true} />
+          <TabsContent value="profile">
+            <DoctorProfile doctorId={user.id} isEditable={true} />
           </TabsContent>
 
           <TabsContent value="resolved">
