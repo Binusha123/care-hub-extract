@@ -66,7 +66,8 @@ const DoctorDashboard = () => {
       const { data: activeEmergencies, error: emergenciesError } = await supabase
         .from('emergencies')
         .select('id')
-        .in('status', ['ACTIVE', 'ASSIGNED']);
+        .eq('resolved', false)
+        .neq('status', 'resolved');
 
       // Get today's appointments for this doctor
       const { data: todayAppointments, error: appointmentsError } = await supabase
