@@ -62,20 +62,22 @@ const DoctorDashboard = () => {
     try {
       const today = format(new Date(), 'yyyy-MM-dd');
 
-      // Get active emergencies (not resolved)
-      const { data: activeEmergencies, error: emergenciesError } = await supabase
-        .from('emergencies')
-        .select('id')
-        .eq('resolved', false)
-        .neq('status', 'resolved');
-
       // Get today's appointments for this doctor
       const { data: todayAppointments, error: appointmentsError } = await supabase
         .from('appointments')
-        .select('id')
+        .select('id, patient_id')
         .eq('doctor_id', user.id)
         .eq('appointment_date', today)
         .in('status', ['BOOKED', 'CHECKED_IN', 'IN_PROGRESS']);
+
+      // Get emergencies assigned to this doctor today
+      const { data: assignedEmergencies, error: emergenciesError } = await supabase
+        .from('treatment_queue')
+        .select('id, patient_id')
+        .eq('doctor_id', user.id)
+        .gte('assigned_at', `${today}T00:00:00`)
+        .lt('assigned_at', `${today}T23:59:59`)
+        .in('status', ['assigned', 'en-route', 'with-patient']);
 
       // Get total unique patients who ever booked with this doctor
       const { data: totalPatients, error: totalPatientsError } = await supabase
@@ -83,35 +85,51 @@ const DoctorDashboard = () => {
         .select('patient_id')
         .eq('doctor_id', user.id);
 
-      // Get distinct patients today
-      const { data: patientsToday, error: patientsTodayError } = await supabase
-        .from('appointments')
+      // Get all treatment queue entries for this doctor (for total count)
+      const { data: allTreatments, error: allTreatmentsError } = await supabase
+        .from('treatment_queue')
         .select('patient_id')
-        .eq('doctor_id', user.id)
-        .eq('appointment_date', today)
-        .in('status', ['BOOKED', 'CHECKED_IN', 'IN_PROGRESS', 'COMPLETED']);
+        .eq('doctor_id', user.id);
 
       if (emergenciesError) console.error('Error fetching emergencies:', emergenciesError);
       if (appointmentsError) console.error('Error fetching appointments:', appointmentsError);
       if (totalPatientsError) console.error('Error fetching total patients:', totalPatientsError);
-      if (patientsTodayError) console.error('Error fetching patients today:', patientsTodayError);
+      if (allTreatmentsError) console.error('Error fetching all treatments:', allTreatmentsError);
 
       // Calculate unique patient counts
-      const uniqueTotalPatients = [...new Set(totalPatients?.map(p => p.patient_id) || [])].length;
-      const uniquePatientsToday = [...new Set(patientsToday?.map(p => p.patient_id) || [])].length;
+      const appointmentPatientIds = new Set(todayAppointments?.map(p => p.patient_id) || []);
+      const emergencyPatientIds = new Set(assignedEmergencies?.map(p => p.patient_id) || []);
+      const allPatientIds = new Set([
+        ...(totalPatients?.map(p => p.patient_id) || []),
+        ...(allTreatments?.map(p => p.patient_id) || [])
+      ]);
+      
+      // Combine today's patients from both appointments and emergencies
+      const todayPatientIds = new Set([...appointmentPatientIds, ...emergencyPatientIds]);
+
+      const appointmentCount = todayAppointments?.length || 0;
+      const emergencyCount = assignedEmergencies?.length || 0;
+      const totalToday = todayPatientIds.size;
 
       setCounts({
-        appointments: todayAppointments?.length || 0,
-        emergencies: 0, // Will be set separately
-        total: uniquePatientsToday,
-        patientsToday: uniquePatientsToday
+        appointments: appointmentCount,
+        emergencies: emergencyCount,
+        total: totalToday,
+        patientsToday: totalToday
       });
 
       setRealtimeStats({
-        totalEmergencies: activeEmergencies?.length || 0,
-        totalPatients: uniqueTotalPatients,
-        pendingTreatments: 0, // Calculated from treatment queue
-        activeEmergencies: activeEmergencies?.length || 0
+        totalEmergencies: emergencyCount,
+        totalPatients: allPatientIds.size,
+        pendingTreatments: emergencyCount,
+        activeEmergencies: emergencyCount
+      });
+
+      console.log('Updated counts:', {
+        appointments: appointmentCount,
+        emergencies: emergencyCount,
+        total: totalToday,
+        totalPatients: allPatientIds.size
       });
 
     } catch (error) {
@@ -131,10 +149,11 @@ const DoctorDashboard = () => {
       // Fetch appointments and emergencies in parallel for better performance
       const [appointmentsResult, emergenciesResult] = await Promise.all([
         supabase
-          .from('patients_today')
-          .select('*')
+          .from('appointments')
+          .select('id, patient_name, appointment_time, reason, status, notes')
           .eq('doctor_id', user.id)
-          .eq('date', today),
+          .eq('appointment_date', today)
+          .in('status', ['BOOKED', 'CHECKED_IN', 'IN_PROGRESS']),
         supabase
           .from('treatment_queue')
           .select('*')
@@ -164,8 +183,8 @@ const DoctorDashboard = () => {
         id: apt.id,
         patient_name: apt.patient_name,
         appointment_time: apt.appointment_time,
-        reason: apt.condition,
-        status: 'active',
+        reason: apt.reason || apt.notes || 'Scheduled appointment',
+        status: apt.status.toLowerCase(),
         type: 'appointment' as const,
         hospital_name: 'General Hospital',
         department_name: 'General'
@@ -189,12 +208,19 @@ const DoctorDashboard = () => {
       console.log('Total patients processed:', allPatients.length);
 
       setPatients(allPatients);
-      setCounts({
-        appointments: appointmentPatients.length,
-        emergencies: emergencyPatients.length,
-        total: allPatients.length,
-        patientsToday: allPatients.length
-      });
+      
+      // Update counts with actual data
+      const appointmentCount = appointmentPatients.length;
+      const emergencyCount = emergencyPatients.length;
+      const totalCount = allPatients.length;
+      
+      setCounts(prev => ({
+        ...prev,
+        appointments: appointmentCount,
+        emergencies: emergencyCount,
+        total: totalCount,
+        patientsToday: totalCount
+      }));
 
     } catch (error) {
       console.error('Error fetching patients today:', error);
@@ -248,10 +274,11 @@ const DoctorDashboard = () => {
         {
           event: '*',
           schema: 'public',
-          table: 'appointments'
+          table: 'appointments',
+          filter: `doctor_id=eq.${user.id}`
         },
         (payload) => {
-          console.log('Appointments updated:', payload);
+          console.log('Appointments updated for doctor:', payload);
           fetchPatientsToday();
           fetchRealtimeStats();
         }
