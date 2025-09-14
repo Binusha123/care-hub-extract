@@ -58,6 +58,7 @@ export type Database = {
       }
       doctor_availability: {
         Row: {
+          availability_date: string
           available_from: string
           available_to: string
           created_at: string
@@ -74,6 +75,7 @@ export type Database = {
           years_experience: number | null
         }
         Insert: {
+          availability_date?: string
           available_from: string
           available_to: string
           created_at?: string
@@ -90,6 +92,7 @@ export type Database = {
           years_experience?: number | null
         }
         Update: {
+          availability_date?: string
           available_from?: string
           available_to?: string
           created_at?: string
@@ -424,6 +427,25 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      get_active_availability: {
+        Args: { doctor_uuid?: string }
+        Returns: {
+          availability_date: string
+          available_from: string
+          available_to: string
+          created_at: string
+          department: string
+          doctor_id: string
+          full_name: string
+          gender: string
+          id: string
+          location: string
+          slot_duration: number
+          specialization: string
+          updated_at: string
+          years_experience: number
+        }[]
+      }
       is_medical_staff: {
         Args: Record<PropertyKey, never>
         Returns: boolean
