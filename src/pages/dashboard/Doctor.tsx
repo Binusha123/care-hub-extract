@@ -70,14 +70,12 @@ const DoctorDashboard = () => {
         .eq('appointment_date', today)
         .in('status', ['BOOKED', 'CHECKED_IN', 'IN_PROGRESS']);
 
-      // Get emergencies assigned to this doctor today
-      const { data: assignedEmergencies, error: emergenciesError } = await supabase
-        .from('treatment_queue')
-        .select('id, patient_id')
-        .eq('doctor_id', user.id)
-        .gte('assigned_at', `${today}T00:00:00`)
-        .lt('assigned_at', `${today}T23:59:59`)
-        .in('status', ['assigned', 'en-route', 'with-patient']);
+      // Get active emergencies across the system (unresolved)
+      const { data: activeEmergencies, error: emergenciesError } = await supabase
+        .from('emergencies')
+        .select('id')
+        .eq('resolved', false)
+        .eq('status', 'active');
 
       // Get total unique patients who ever booked with this doctor
       const { data: totalPatients, error: totalPatientsError } = await supabase
@@ -98,17 +96,16 @@ const DoctorDashboard = () => {
 
       // Calculate unique patient counts
       const appointmentPatientIds = new Set(todayAppointments?.map(p => p.patient_id) || []);
-      const emergencyPatientIds = new Set(assignedEmergencies?.map(p => p.patient_id) || []);
       const allPatientIds = new Set([
         ...(totalPatients?.map(p => p.patient_id) || []),
         ...(allTreatments?.map(p => p.patient_id) || [])
       ]);
       
-      // Combine today's patients from both appointments and emergencies
-      const todayPatientIds = new Set([...appointmentPatientIds, ...emergencyPatientIds]);
+      // Today's patients from appointments (emergency assignments are handled in fetchPatientsToday)
+      const todayPatientIds = new Set([...appointmentPatientIds]);
 
       const appointmentCount = todayAppointments?.length || 0;
-      const emergencyCount = assignedEmergencies?.length || 0;
+      const emergencyCount = activeEmergencies?.length || 0;
       const totalToday = todayPatientIds.size;
 
       setCounts({
