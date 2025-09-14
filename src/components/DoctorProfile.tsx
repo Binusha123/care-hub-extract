@@ -96,8 +96,7 @@ const DoctorProfile = ({ doctorId, isEditable = false }: DoctorProfileProps) => 
   const fetchAvailability = async () => {
     try {
       const { data, error } = await supabase
-        .from('doctor_availability')
-        .select('*')
+        .rpc('get_active_availability', { doctor_uuid: doctorId })
         .eq('doctor_id', doctorId);
 
       if (error) throw error;

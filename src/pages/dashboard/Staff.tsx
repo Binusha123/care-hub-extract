@@ -198,8 +198,8 @@ const StaffDashboard = () => {
         console.log('🔄 Appointments updated');
         fetchSystemStats();
       })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'doctor_availability' }, () => {
-        console.log('🔄 Doctor availability updated');
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'doctor_availability' }, (payload) => {
+        console.log('🔄 Doctor availability updated:', payload);
         fetchDoctorProfiles();
         fetchSystemStats();
       })

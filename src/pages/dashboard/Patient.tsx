@@ -123,8 +123,8 @@ const PatientDashboard = () => {
           schema: 'public',
           table: 'doctor_availability'
         },
-        () => {
-          console.log('🔄 Doctor availability changed');
+        (payload) => {
+          console.log('🔄 Doctor availability changed:', payload);
           fetchDoctorShifts();
         }
       )
@@ -176,9 +176,7 @@ const PatientDashboard = () => {
           .select('user_id, name, department')
           .in('user_id', doctorIds),
         supabase
-          .from('doctor_availability')
-          .select('*')
-          .in('doctor_id', doctorIds)
+          .rpc('get_active_availability', { doctor_uuid: null })
       ]);
 
       if (profilesResult.error) throw profilesResult.error;

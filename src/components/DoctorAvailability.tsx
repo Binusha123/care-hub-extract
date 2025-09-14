@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Clock } from "lucide-react";
+import { Clock, Calendar } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
@@ -17,27 +17,50 @@ interface Availability {
   id?: string;
   available_from: string;
   available_to: string;
+  availability_date: string;
 }
 
 const DoctorAvailability = ({ doctorId, isEditable = false }: DoctorAvailabilityProps) => {
   const [availability, setAvailability] = useState<Availability[]>([]);
   const [newAvailability, setNewAvailability] = useState({
     available_from: "",
-    available_to: ""
+    available_to: "",
+    availability_date: new Date().toISOString().split('T')[0]
   });
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
     fetchAvailability();
+    
+    // Set up real-time subscription for availability changes
+    const channel = supabase
+      .channel(`doctor_availability_${doctorId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'doctor_availability',
+          filter: `doctor_id=eq.${doctorId}`
+        },
+        (payload) => {
+          console.log('🔄 Doctor availability changed:', payload);
+          fetchAvailability();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [doctorId]);
 
   const fetchAvailability = async () => {
     try {
+      // Use the new function to get only active availability
       const { data, error } = await supabase
-        .from('doctor_availability')
-        .select('*')
-        .eq('doctor_id', doctorId);
+        .rpc('get_active_availability', { doctor_uuid: doctorId });
 
       if (error) throw error;
       setAvailability(data || []);
@@ -47,10 +70,24 @@ const DoctorAvailability = ({ doctorId, isEditable = false }: DoctorAvailability
   };
 
   const addAvailability = async () => {
-    if (!newAvailability.available_from || !newAvailability.available_to) {
+    if (!newAvailability.available_from || !newAvailability.available_to || !newAvailability.availability_date) {
       toast({
         title: "Missing Information",
-        description: "Please fill in both time fields",
+        description: "Please fill in all fields",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    // Validate that the date is not in the past
+    const selectedDate = new Date(newAvailability.availability_date);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    if (selectedDate < today) {
+      toast({
+        title: "Invalid Date",
+        description: "Cannot add availability for past dates",
         variant: "destructive"
       });
       return;
@@ -63,18 +100,23 @@ const DoctorAvailability = ({ doctorId, isEditable = false }: DoctorAvailability
         .insert({
           doctor_id: doctorId,
           available_from: newAvailability.available_from,
-          available_to: newAvailability.available_to
+          available_to: newAvailability.available_to,
+          availability_date: newAvailability.availability_date
         });
 
       if (error) throw error;
 
       toast({
         title: "Availability Added",
-        description: "Your availability has been saved successfully",
+        description: "Your availability has been saved and synced across all dashboards",
       });
 
-      setNewAvailability({ available_from: "", available_to: "" });
-      fetchAvailability();
+      setNewAvailability({ 
+        available_from: "", 
+        available_to: "",
+        availability_date: new Date().toISOString().split('T')[0]
+      });
+      // No need to call fetchAvailability - real-time subscription will handle it
     } catch (error: any) {
       toast({
         title: "Error",
@@ -97,10 +139,10 @@ const DoctorAvailability = ({ doctorId, isEditable = false }: DoctorAvailability
 
       toast({
         title: "Availability Removed",
-        description: "Availability slot has been removed",
+        description: "Availability slot has been removed and synced across all dashboards",
       });
 
-      fetchAvailability();
+      // No need to call fetchAvailability - real-time subscription will handle it
     } catch (error: any) {
       toast({
         title: "Error",
@@ -124,9 +166,15 @@ const DoctorAvailability = ({ doctorId, isEditable = false }: DoctorAvailability
             <div className="space-y-2">
               {availability.map((slot) => (
                 <div key={slot.id} className="flex items-center justify-between p-3 border rounded-lg">
-                  <div className="flex items-center gap-2">
-                    <Clock className="h-4 w-4 text-muted-foreground" />
-                    <span>{slot.available_from} - {slot.available_to}</span>
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2">
+                      <Calendar className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-sm font-medium">{slot.availability_date}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Clock className="h-4 w-4 text-muted-foreground" />
+                      <span>{slot.available_from} - {slot.available_to}</span>
+                    </div>
                   </div>
                   {isEditable && (
                     <Button
@@ -150,7 +198,20 @@ const DoctorAvailability = ({ doctorId, isEditable = false }: DoctorAvailability
           {isEditable && (
             <div className="border-t pt-4">
               <h4 className="font-medium mb-3">Add New Availability</h4>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <Label htmlFor="date">Date</Label>
+                  <Input
+                    id="date"
+                    type="date"
+                    value={newAvailability.availability_date}
+                    min={new Date().toISOString().split('T')[0]}
+                    onChange={(e) => setNewAvailability(prev => ({
+                      ...prev,
+                      availability_date: e.target.value
+                    }))}
+                  />
+                </div>
                 <div>
                   <Label htmlFor="from-time">From</Label>
                   <Input
