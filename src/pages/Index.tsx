@@ -96,7 +96,7 @@ const Index = () => {
               <h3 className="text-xl font-semibold mb-2">Patient Dashboard</h3>
               <p className="text-muted-foreground mb-4">Upload medical reports and get AI-powered health insights</p>
               <Button asChild variant="outline">
-                <Link to="/dashboard/patient">Access Dashboard</Link>
+                <Link to="/login">Sign In</Link>
               </Button>
             </Card>
 
@@ -107,7 +107,7 @@ const Index = () => {
               <h3 className="text-xl font-semibold mb-2">Staff Dashboard</h3>
               <p className="text-muted-foreground mb-4">Monitor patients and trigger emergency alerts when needed</p>
               <Button asChild variant="outline">
-                <Link to="/dashboard/staff">Staff Access</Link>
+                <Link to="/login">Sign In</Link>
               </Button>
             </Card>
 
@@ -118,7 +118,7 @@ const Index = () => {
               <h3 className="text-xl font-semibold mb-2">Doctor Dashboard</h3>
               <p className="text-muted-foreground mb-4">Receive real-time emergency alerts and manage critical cases</p>
               <Button asChild variant="outline">
-                <Link to="/dashboard/doctor">Doctor Access</Link>
+                <Link to="/login">Sign In</Link>
               </Button>
             </Card>
           </div>

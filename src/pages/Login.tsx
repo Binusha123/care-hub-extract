@@ -30,8 +30,7 @@ const Login = () => {
           .eq('user_id', session.user.id)
           .single();
 
-        const userRole = profile?.role || 'patient';
-        navigate(`/dashboard/${userRole}`, { replace: true });
+      navigate("/dashboard", { replace: true });
       }
     };
 
@@ -64,8 +63,8 @@ const Login = () => {
         description: "Login successful",
       });
 
-      // Redirect based on user role
-      navigate(`/dashboard/${userRole}`);
+      // Redirect to unified dashboard
+      navigate("/dashboard");
     } catch (error: any) {
       toast({
         variant: "destructive",

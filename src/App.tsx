@@ -7,9 +7,7 @@ import Index from "./pages/Index";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import ResetPassword from "./pages/ResetPassword";
-import PatientDashboard from "./pages/dashboard/Patient";
-import StaffDashboard from "./pages/dashboard/Staff";
-import DoctorDashboard from "./pages/dashboard/Doctor";
+import Dashboard from "./pages/Dashboard";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -25,9 +23,11 @@ const App = () => (
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Signup />} />
           <Route path="/reset-password" element={<ResetPassword />} />
-          <Route path="/dashboard/patient" element={<PatientDashboard />} />
-          <Route path="/dashboard/staff" element={<StaffDashboard />} />
-          <Route path="/dashboard/doctor" element={<DoctorDashboard />} />
+          <Route path="/dashboard" element={<Dashboard />} />
+          {/* Legacy routes for backward compatibility */}
+          <Route path="/dashboard/patient" element={<Dashboard />} />
+          <Route path="/dashboard/staff" element={<Dashboard />} />
+          <Route path="/dashboard/doctor" element={<Dashboard />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
