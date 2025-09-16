@@ -356,7 +356,6 @@ const DoctorDashboard = () => {
          },
          (payload) => {
            console.log('Doctor availability updated:', payload);
-           // This will trigger updates on Staff dashboard
            fetchRealtimeStats();
          }
        )

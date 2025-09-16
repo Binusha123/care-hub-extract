@@ -148,10 +148,28 @@ const PatientDashboard = () => {
       )
       .subscribe();
 
+    // Real-time subscription for appointments (to update doctor counts)
+    const appointmentSubscription = supabase
+      .channel('patient_appointments_changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'appointments'
+        },
+        (payload) => {
+          console.log('🔄 Appointment changed:', payload);
+          // This will trigger doctor dashboard updates via their subscriptions
+        }
+      )
+      .subscribe();
+
     return () => {
       supabase.removeChannel(shiftSubscription);
       supabase.removeChannel(availabilitySubscription);
       supabase.removeChannel(treatmentSubscription);
+      supabase.removeChannel(appointmentSubscription);
     };
   }, [user]);
 
@@ -369,45 +387,38 @@ const PatientDashboard = () => {
           </Card>
         )}
 
-        {/* Doctor Availability Section */}
+        {/* Available Doctors Section */}
         <Card className="mb-8">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Users className="h-6 w-6" />
-              Doctor Availability
+              Available Doctors
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {doctorShifts
-                .filter(shift => shift.department && (user.department === shift.department || !user.department))
+                .filter(shift => shift.status === 'on-duty')
                 .map((shift) => (
-                <Card key={shift.id} className={`${shift.status === 'off-duty' ? 'opacity-50' : ''}`}>
+                <Card key={shift.id}>
                   <CardContent className="p-4">
                     <div className="flex items-start justify-between mb-2">
                       <div>
                         <h4 className="font-semibold">{shift.doctor_name}</h4>
                         <p className="text-sm text-muted-foreground">{shift.department}</p>
                       </div>
-                      <Badge variant={shift.status === 'on-duty' ? 'default' : 'secondary'}>
-                        {shift.status}
+                      <Badge variant={shift.response_status === 'available' ? 'default' : 'secondary'}>
+                        {shift.response_status}
                       </Badge>
                     </div>
                     
                     <div className="space-y-2">
                       <div className="flex items-center justify-between text-sm">
-                        <span>Available:</span>
+                        <span>Shift:</span>
                         <span>{shift.shift_start} - {shift.shift_end}</span>
                       </div>
-                      
-                      <div className="flex items-center justify-between text-sm">
-                        <span>Status:</span>
-                        <Badge variant="outline">
-                          {shift.response_status}
-                        </Badge>
-                      </div>
 
-                      {shift.status === 'on-duty' && shift.response_status === 'available' && (
+                      {shift.response_status === 'available' && (
                         <div className="mt-2">
                           <Badge variant="default" className="bg-green-600">
                             Available Now
@@ -416,7 +427,7 @@ const PatientDashboard = () => {
                       )}
                     </div>
 
-                    {/* Doctor Availability Times */}
+                    {/* Doctor Availability Slots */}
                     <div className="mt-3 pt-3 border-t">
                       <DoctorAvailability doctorId={shift.doctor_id} isEditable={false} />
                     </div>
@@ -425,8 +436,8 @@ const PatientDashboard = () => {
               ))}
             </div>
             
-            {doctorShifts.length === 0 && (
-              <p className="text-muted-foreground text-center py-4">No doctor information available</p>
+            {doctorShifts.filter(s => s.status === 'on-duty').length === 0 && (
+              <p className="text-muted-foreground text-center py-4">No doctors currently available</p>
             )}
           </CardContent>
         </Card>
